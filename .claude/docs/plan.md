@@ -231,9 +231,16 @@ between "each phase works in isolation" and "the program is fully implemented."
       `submit_threat`, but nothing reads it back — the Scout wakes the local Soldier
       directly, so Phase 2's "network-wide mobilization on threshold cross" never fires in
       the live path.
-- [ ] **Real IPFS end-to-end.** Provision a `PINATA_JWT` and run the round trip with a real
-      upload/fetch — `spawn_demo`'s upload currently fails loudly without it, and the devnet
-      test uses a placeholder CID (`ledger/client.rs`).
+- [ ] **Remove IPFS; store the gene bytes on-chain (over-engineering cut).** A gene is a
+      `Vec<Allele>` over a 3-variant enum — a handful of bytes, smaller than the 64-char CID
+      that points at it. The off-chain blob store (Pinata/`PINATA_JWT`, `reqwest`,
+      `ledger/ipfs.rs`) is unjustified at this size. Replace `GenomeEntry.ipfs_cid: String`
+      with the gene's own bytes (`gene_seq: Vec<u8>`), drop the fetch-and-verify step (the
+      gene now comes straight from the trusted confirmed-commitment account read), and delete
+      `ipfs.rs` + the `reqwest`/Pinata dependency. Keep `gene_hash` as the registry's gene
+      identity (now derivable, but the documented `Wasm_Gene_Hash` field). Touches: the Anchor
+      program (`state.rs`, `commit_gene`), `ledger/{client,registry,mod}.rs`, `agents/soldier.rs`
+      (`resolve_and_run`, `Pharmacy`), `agents/scout.rs::spawn_demo`, then redeploy to devnet.
 - [ ] **One green pass of the ignored live tests** (`cargo test -- --ignored`): real process
       suspension + the devnet `submit_threat`/`commit_gene`/`suppress_gene` round trip.
 
@@ -242,6 +249,7 @@ sandbox host stay fake): the scripted target as the "virus," the mock host insid
 `evolution/sandbox.rs`, and the Lymph Node's mock Top-5,000 subset. Windows suspension
 (`NtSuspendProcess`) stays a stub — the PoC targets macOS/Linux.
 
-**Done when:** launching the app with `PINATA_JWT` set shows, live in the dashboard: the
-scripted target crossing 100 pts → Soldier wake → fuzz-discovered gene committed on devnet →
-`Neutralized`, then a `suppress_gene` transaction halting the next wake — no manual seeding.
+**Done when:** launching the app shows, live in the dashboard: the scripted target crossing
+100 pts → Soldier wake → fuzz-discovered gene committed on devnet (gene bytes in the account,
+no IPFS) → `Neutralized`, then a `suppress_gene` transaction halting the next wake — no manual
+seeding.
