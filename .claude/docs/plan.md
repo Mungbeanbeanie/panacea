@@ -113,11 +113,11 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 5 — State Ledger (Ledger 1) & Light-Client Verification
 **Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** self-contained
 
-- [ ] Block headers, timestamps, validator signatures (`ledger/state.rs`)
-- [ ] Merkle roots of the Threat + Genome registries
-- [ ] Endpoint downloads only the State Ledger
-- [ ] Merkle-path request + verify against the local root
-- [ ] Conjugation transport (P2P/WebSocket), mockable (`ledger/client.rs`)
+- [x] Block headers, timestamps, validator signatures (`ledger/state.rs`)
+- [x] Merkle roots of the Threat + Genome registries
+- [x] Endpoint downloads only the State Ledger
+- [x] Merkle-path request + verify against the local root
+- [x] Conjugation transport (P2P/WebSocket), mockable (`ledger/client.rs`)
 
 **Done when:** a gene/threat hash verifies against a Merkle root via a fetched path — no full-chain download.
 
