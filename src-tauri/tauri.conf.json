@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "bio-digital-defense",
+  "identifier": "com.bio-digital-defense.app",
+  "build": {
+    "beforeDevCommand": "npm --prefix ../landing run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm --prefix ../landing run build",
+    "frontendDist": "../landing/dist"
+  },
+  "app": {
+    "windows": [
+      { "title": "Bio-Digital Defense", "width": 1200, "height": 800 }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

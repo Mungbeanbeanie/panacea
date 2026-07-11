@@ -1,0 +1,26 @@
+# Claude local dev setup
+.claude/
+
+# Rust / Cargo
+target/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp

@@ -1,0 +1,8 @@
+[package]
+name = "bio-digital-defense"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Populate with `cargo add tauri thiserror ...` — versions come from the registry, not
+# memory (see ../.claude/docs/working-agreement.md, Rule 4). Tauri wiring lands in M0.
