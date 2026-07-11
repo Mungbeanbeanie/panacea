@@ -79,11 +79,11 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 2 — Threat Registry (Ledger 2)
 **Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock `Threat_ID`/schema
 
-- [ ] `Threat_ID` = cryptographic hash of the behavioral vector
-- [ ] Store `Behavioral_Schema`
-- [ ] `Confidence_Score` integer, incremented on matching trajectory
-- [ ] Correlate an incoming vector to an existing `Threat_ID`
-- [ ] Trigger network-wide mobilization once the confidence threshold is crossed
+- [x] `Threat_ID` = cryptographic hash of the behavioral vector
+- [x] Store `Behavioral_Schema`
+- [x] `Confidence_Score` integer, incremented on matching trajectory
+- [x] Correlate an incoming vector to an existing `Threat_ID`
+- [x] Trigger network-wide mobilization once the confidence threshold is crossed
 
 **Done when:** two matching trajectories increment the score and fire a (mocked) mobilization.
 
@@ -100,13 +100,13 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 4 — Evolution & Stage 2 (Local Isolation & Fuzzing)
 **Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock frozen process
 
-- [ ] MicroVM/Wasm sandbox setup + teardown (`evolution/sandbox.rs`)
-- [ ] Clone the target into the sandbox against a mock host OS
-- [ ] Allele matrix — pre-compiled structural primitives (e.g. `Allele_04`, `Allele_12`)
-- [ ] Combinatorial fuzz driver trying allele combinations
-- [ ] Success criterion: target aborts/crashes without destabilizing the mock host
-- [ ] Compile the winning sequence → Wasm Gene Payload
-- [ ] Isolation guarantee: alleles/genes execute **only** in-sandbox (keep `sandbox-isolation-check` passing)
+- [x] MicroVM/Wasm sandbox setup + teardown (`evolution/sandbox.rs`)
+- [x] Clone the target into the sandbox against a mock host OS
+- [x] Allele matrix — pre-compiled structural primitives (e.g. `Allele_04`, `Allele_12`)
+- [x] Combinatorial fuzz driver trying allele combinations
+- [x] Success criterion: target aborts/crashes without destabilizing the mock host
+- [x] Compile the winning sequence → Wasm Gene Payload
+- [x] Isolation guarantee: alleles/genes execute **only** in-sandbox (keep `sandbox-isolation-check` passing)
 
 **Done when:** the fuzz finds a combo that kills the target in-sandbox and emits a Wasm gene.
 
