@@ -66,13 +66,13 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 1 — Scout Agents & Stage 1 (Trajectory Scoring)
 **Owner:** A · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** shared `core` types
 
-- [ ] Ultra-light background daemon loop (`agents/scout.rs`)
-- [ ] Behavioral tracing: syscall anomalies, memory-space boundary violations, I/O bursts
-- [ ] State-transition matrix: Action A +20, Action B +50, Action C +40
-- [ ] Per-PID cumulative trajectory score
-- [ ] 100-pt threshold → hard interrupt: suspend all threads of the target PID
-- [ ] Signal the local Soldier spore on threshold cross
-- [ ] Emit `Behavioral_Schema` (syscall/port sequence) for the Threat Registry
+- [x] Ultra-light background daemon loop (`agents/scout.rs`)
+- [x] Behavioral tracing: syscall anomalies, memory-space boundary violations, I/O bursts
+- [x] State-transition matrix: Action A +20, Action B +50, Action C +40
+- [x] Per-PID cumulative trajectory score
+- [x] 100-pt threshold → hard interrupt: suspend all threads of the target PID
+- [x] Signal the local Soldier spore on threshold cross
+- [x] Emit `Behavioral_Schema` (syscall/port sequence) for the Threat Registry
 
 **Done when:** a scripted "bad" process crosses 100 pts, is suspended, and the spore is signaled.
 
