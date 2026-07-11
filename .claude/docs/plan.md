@@ -90,10 +90,10 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 3 — Soldier Spore Lifecycle
 **Owner:** A · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock wake signal
 
-- [ ] Soldier at rest = dormant, serialized, un-executed spore on disk
-- [ ] Wake on a high-confidence threat notification (`Threat_ID`)
-- [ ] Clone the frozen process's memory space
-- [ ] Apoptosis: programmed deletion / re-serialize back to a passive spore after acting
+- [x] Soldier at rest = dormant, serialized, un-executed spore on disk
+- [x] Wake on a high-confidence threat notification (`Threat_ID`)
+- [x] Clone the frozen process's memory space
+- [x] Apoptosis: programmed deletion / re-serialize back to a passive spore after acting
 
 **Done when:** a wake signal spins up a Soldier that acts, then re-serializes to a spore.
 
