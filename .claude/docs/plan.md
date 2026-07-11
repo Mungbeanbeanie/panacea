@@ -57,9 +57,9 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 - [x] `cargo tauri init` in `src-tauri/` with pinned Tauri 2 + crate versions
 - [x] Populate `landing/` deps (React, Vite, `@tauri-apps/api`) + lockfile
 - [x] Validate `tauri.conf.json` for the sibling `landing/` + `src-tauri/` layout
-- [ ] `.github/` CI: `cargo check` + `cargo build` + frontend build per platform
-- [ ] Whole module tree compiles — `cargo check` green
-- [ ] Shared cross-cutting types in `core/mod.rs` (`Threat_ID`, anomaly score, PID, gene handle)
+- [x] `.github/` CI: `cargo check` + `cargo build` + frontend build per platform
+- [x] Whole module tree compiles — `cargo check` green
+- [x] Shared cross-cutting types in `core/mod.rs` (`Threat_ID`, anomaly score, PID, gene handle)
 
 **Done when:** `npm run tauri dev` opens the window with an empty dashboard.
 
