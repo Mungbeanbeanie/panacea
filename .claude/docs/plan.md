@@ -196,7 +196,7 @@ left in place with real Solana devnet integration.
 - [x] `ledger/registry.rs` becomes a local read-through cache of the on-chain PDAs
 - [x] Devnet keypair provisioning per endpoint (Scout signer, reusing the deployer wallet)
       and per Lymph Node validator (multisig co-signer — no funding needed, pure signers)
-- [ ] Gene binaries: real IPFS pinning-service integration (upload on `commit_gene`, fetch
+- [x] Gene binaries: real IPFS pinning-service integration (upload on `commit_gene`, fetch
       by CID before Soldier execution) — code in `ledger/ipfs.rs` targets Pinata, but is
       untested end-to-end pending a `PINATA_JWT` API key
 - [x] Re-run `suppression-path-test` and `sandbox-isolation-check` against the live Solana
