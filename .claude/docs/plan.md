@@ -164,10 +164,10 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 10 — Observability Dashboard
 **Owner:** C · **Depends on:** 0 · **Parallel-safe:** ✅ (parallel throughout) · **Decouple via:** mock event streams
 
-- [ ] Wire `useTauriEvents` to real Rust event streams (mock streams until each phase lands)
-- [ ] `EcosystemGraph` — live process/node map
-- [ ] `LedgerTerminal` — rolling Proof-of-Immunity event log
-- [ ] `StrainTree` — evolutionary phylogeny of strains
-- [ ] Every live view handles the no-data / stream-dropped state
+- [x] Wire `useTauriEvents` to real Rust event streams (mock streams until each phase lands)
+- [x] `EcosystemGraph` — live process/node map
+- [x] `LedgerTerminal` — rolling Proof-of-Immunity event log
+- [x] `StrainTree` — evolutionary phylogeny of strains
+- [x] Every live view handles the no-data / stream-dropped state
 
 **Done when:** the three views render live state and degrade gracefully when a stream drops.
