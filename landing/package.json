@@ -8,5 +8,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "@tauri-apps/api": "^2.11.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "vite": "^8.1.4",
+    "@vitejs/plugin-react": "^6.0.3"
   }
 }

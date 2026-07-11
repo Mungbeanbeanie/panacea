@@ -54,9 +54,9 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 0 — Scaffolding & Foundations
 **Owner:** all (together, first) · **Depends on:** — · **Parallel-safe:** must be first
 
-- [ ] `cargo tauri init` in `src-tauri/` with pinned Tauri 2 + crate versions
-- [ ] Populate `landing/` deps (React, Vite, `@tauri-apps/api`) + lockfile
-- [ ] Validate `tauri.conf.json` for the sibling `landing/` + `src-tauri/` layout
+- [x] `cargo tauri init` in `src-tauri/` with pinned Tauri 2 + crate versions
+- [x] Populate `landing/` deps (React, Vite, `@tauri-apps/api`) + lockfile
+- [x] Validate `tauri.conf.json` for the sibling `landing/` + `src-tauri/` layout
 - [ ] `.github/` CI: `cargo check` + `cargo build` + frontend build per platform
 - [ ] Whole module tree compiles — `cargo check` green
 - [ ] Shared cross-cutting types in `core/mod.rs` (`Threat_ID`, anomaly score, PID, gene handle)
