@@ -136,9 +136,9 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 7 — Stage 3 (Lymph Node Regression / Allergy Check)
 **Owner:** A+B · **Depends on:** 0, **4** · **Parallel-safe:** after 4 (or mock gene) · **Decouple via:** mock candidate gene
 
-- [ ] Lymph Node validator environment: standard OS base + Top-5,000 apps (mock subset)
-- [ ] Execute the proposed Wasm mutation in the crowded environment
-- [ ] Detect a whitelisted app crash / memory leak → raise `Allergy Flag` → drop the gene
+- [x] Lymph Node validator environment: standard OS base + Top-5,000 apps (mock subset)
+- [x] Execute the proposed Wasm mutation in the crowded environment
+- [x] Detect a whitelisted app crash / memory leak → raise `Allergy Flag` → drop the gene
 
 **Done when:** a gene that breaks a whitelisted app is flagged allergic and dropped.
 

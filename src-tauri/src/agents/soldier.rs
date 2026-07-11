@@ -235,11 +235,6 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 }
-//!
-//! The full dormant-spore lifecycle (wake signal, apoptosis re-serialization) is Phase 3
-//! and not yet built. [`resolve_and_run`] is the Pharmacy Flow slice of a Soldier that
-//! Phase 6 needs: given a `Threat_ID` it already has (from a wake signal), resolve the cure
-//! from the Genome Registry, verify it, run it in-sandbox, and undergo apoptosis.
 
 use crate::core::ThreatId;
 use crate::evolution::sandbox::{Sandbox, TrialOutcome};
@@ -301,7 +296,7 @@ pub fn resolve_and_run(
 }
 
 #[cfg(test)]
-mod tests {
+mod pharmacy_flow_tests {
     use super::*;
     use crate::evolution::alleles::{Allele, GenePayload};
     use crate::evolution::sandbox::FrozenProcess;
