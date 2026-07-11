@@ -154,10 +154,10 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 9 — Epigenetic Suppression Kill-Switch
 **Owner:** B · **Depends on:** 0, **6**, **3** · **Parallel-safe:** after 6 · first-class safety
 
-- [ ] Epigenetic Suppressor Token broadcast → set `Epigenetic_Status = 1` on a Gene ID
-- [ ] Soldiers reading Ledger 3 immediately stop executing that cure
-- [ ] Status check happens **before** any gene fetch/exec
-- [ ] Keep [`suppression-path-test`](../skills/suppression-path-test/SKILL.md) passing
+- [x] Epigenetic Suppressor Token broadcast → set `Epigenetic_Status = 1` on a Gene ID
+- [x] Soldiers reading Ledger 3 immediately stop executing that cure
+- [x] Status check happens **before** any gene fetch/exec
+- [x] Keep [`suppression-path-test`](../skills/suppression-path-test/SKILL.md) passing
 
 **Done when:** flipping `Epigenetic_Status` to 1 halts the cure in seconds, before any fetch/exec.
 
