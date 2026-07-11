@@ -5,6 +5,11 @@
 target/
 src-tauri/gen/
 
+# Anchor / Solana
+.anchor/
+test-ledger/
+keys/
+
 # Node / Vite
 node_modules/
 dist/

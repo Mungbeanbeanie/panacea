@@ -1,31 +1,56 @@
-# Current Dev Plan — Phase 11, Steps 1–3 (Solana Migration: Anchor Program Foundations)
+# Current Dev Plan — Phase 11, Steps 1–5 (Solana Migration: Anchor Program Foundations)
 
-> Scratch planning doc only (`.josh/` is gitignored). **Nothing here is implemented until
-> the user says "implement."** Conforms to `.claude/docs/source-of-truth.md` (canonical)
-> and `.claude/docs/plan.md` Phase 11 (owner B).
+> Scratch planning doc only (`.josh/` is gitignored). Conforms to
+> `.claude/docs/source-of-truth.md` (canonical) and `.claude/docs/plan.md` Phase 11
+> (owner B).
+>
+> **✅ Implemented and verified this session.** `anchor build` compiles clean (no errors,
+> no warnings); `target/deploy/bio_digital_defense.so` produced; IDL lists both
+> `submit_threat`/`commit_gene` instructions and both `ThreatEntry`/`GenomeEntry` accounts;
+> `anchor keys list` matches `declare_id!`/`Anchor.toml`. Not yet deployed to devnet
+> (box 5) and no client-side wiring (box 6+) — that's the next slice.
 
-## Scope (`.claude/docs/plan.md` Phase 11, boxes 1–3 only)
+## What changed from the staged plan during implementation
+
+- `programs/bio_digital_defense/Cargo.toml` needed
+  `anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }` — the plain
+  `"1.1.2"` version string alone fails to compile (`init_if_needed` requires the feature
+  flag explicitly; its absence produced a cascade of ~30 downstream `Bumps`/`Accounts`
+  trait errors that all trace back to this one root cause).
+- 5 real devnet keypairs generated at `keys/lymph-nodes/validator-{1..5}.json` (gitignored)
+  for the Lymph Node validators; their pubkeys are hardcoded in `constants.rs` per the
+  reviewed plan. The program's own keypair is at `target/deploy/bio_digital_defense-keypair.json`
+  (also gitignored via the existing `target/` rule), pubkey `FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x`,
+  matching `declare_id!` and `Anchor.toml`'s `[programs.devnet]` entry.
+- Root `Anchor.toml` and `Cargo.toml` (workspace, `members = ["programs/*"]`) added —
+  confirmed via `git status` that `src-tauri/`'s independent `Cargo.toml` isn't absorbed
+  into this workspace.
+
+## Scope (`.claude/docs/plan.md` Phase 11, boxes 1–5)
 
 | # | Phase 11 box | This doc covers it? |
 |---|---|---|
-| 1 | Anchor workspace (`programs/bio_digital_defense/`) with Threat Registry + Genome Registry account types (PDAs) | ✅ staged below |
-| 2 | `submit_threat` instruction: create/update a Threat Registry PDA, increment `Confidence_Score` | ✅ staged below |
-| 3 | `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA (Proof of Immunity) | ✅ staged below |
-| 4 | `suppress_gene` instruction | ❌ out of scope — next slice |
-| 5–11 | Devnet deploy, `ledger/` rewiring, keypair provisioning, real IPFS, test re-run | ❌ out of scope — later slices |
+| 1 | Anchor workspace (`programs/bio_digital_defense/`) with Threat Registry + Genome Registry account types (PDAs) | ✅ **implemented** |
+| 2 | `submit_threat` instruction: create/update a Threat Registry PDA, increment `Confidence_Score` | ✅ **implemented** |
+| 3 | `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA (Proof of Immunity) | ✅ **implemented** |
+| 4 | `suppress_gene` instruction: same multisig authority flips `Epigenetic_Status` to 1 | 🟡 staged below — **not implemented** |
+| 5 | Deploy the program to Solana devnet; record the program ID in `Anchor.toml` | 🟡 staged below — **not implemented** |
+| 6–11 | `ledger/` rewiring, endpoint keypair provisioning, real IPFS, test re-run | ❌ out of scope — later slices |
 
 This is purely the **on-chain program side** (new `programs/` crate). It does **not** touch
 `src-tauri/src/ledger/{client,state,registry,consensus}.rs` — those stay on their current
 mock implementation until a later slice rewires them to call this program over RPC. No
 collision with owner A's `agents/`.
 
-## Prerequisite gap (checked this session)
+## Toolchain status (updated — installed this session)
 
-Neither the Solana CLI nor Anchor CLI nor `avm` is installed on this machine (`solana`,
-`anchor`, `avm` all resolve to "command not found"; only `cargo`/`rustc` 1.95.0 are
-present). Nothing here can actually build or deploy until those are installed. Flagging
-this now so it isn't a surprise when "implement" is said — this is a one-time setup step,
-not part of the 3 code items above, but blocks them.
+`solana-cli 3.1.10` (Agave), `anchor-cli 1.1.2`, and `avm 1.1.2` are now installed.
+`avm use latest` auto-selected Solana `3.1.10` as the version paired with Anchor `1.1.2`
+(downgraded from the `stable` 4.1.1 installed earlier — this is Anchor's own compatibility
+resolution, not a manual choice). **Still unverified:** which `anchor-lang` crate version
+in `programs/bio_digital_defense/Cargo.toml` actually pairs with CLI `1.1.2` — don't guess
+this from memory at implementation time (Rule 4); check `anchor --version` / the Anchor
+release notes for the matching crate version before pinning it.
 
 ## What already exists (the mock this replaces/extends — read this session)
 
@@ -74,10 +99,15 @@ Account types (PDAs), mirroring `registry.rs`'s row shapes:
   - `ipfs_cid: String` (bounded, e.g. max 64 bytes — real CIDs fit)
   - `epigenetic_status: u8` (0 = Active, 1 = Suppressed — matches `EpigeneticStatus` today)
   - `bump: u8`
-- **`LymphNodeConfig`** — singleton account, not itemized in plan.md's box 1 wording but
-  required to make box 3's multisig check possible: holds the 5 Lymph Node validator
-  `Pubkey`s and the threshold (`3`). Initialized once via an `initialize_lymph_nodes`
-  instruction (small addition, bundled into this step since box 3 can't work without it).
+- **No third account for the validator set.** Reconsidered from the last draft: a
+  `LymphNodeConfig` account would make the 5 validators/threshold *runtime-mutable*
+  state, which nothing else in this codebase does for a threshold (`ANOMALY_THRESHOLD`,
+  `MOBILIZATION_THRESHOLD`, `POI_QUORUM` are all `pub const`s next to the logic that checks
+  them). Instead: `pub const LYMPH_NODE_VALIDATORS: [Pubkey; 5] = [...]` and
+  `pub const POI_QUORUM: usize = 3;` as consts in `lib.rs` — same multisig guarantee, one
+  fewer account type, no init instruction, matches convention. Needs the 5 real devnet
+  keypairs generated first so their pubkeys can be hardcoded (a `solana-keygen new` step,
+  not on-chain work).
 
 ## Step 2 — `submit_threat` instruction
 
@@ -95,13 +125,13 @@ Account types (PDAs), mirroring `registry.rs`'s row shapes:
 
 ## Step 3 — `commit_gene` instruction (Proof of Immunity)
 
-- **Accounts:** `genome_entry` (`init_if_needed` PDA), `lymph_node_config` (read, to check
-  the known validator set), `payer`, `system_program`, plus each Lymph Node validator as an
-  optional `Signer` account (`remaining_accounts` or 5 named optional `Signer<'info>`
-  fields — leaning toward named fields for clarity at 5 validators).
+- **Accounts:** `genome_entry` (`init_if_needed` PDA), `payer`, `system_program`, plus each
+  Lymph Node validator as an optional `Signer` account (5 named optional `Signer<'info>`
+  fields, checked against the hardcoded `LYMPH_NODE_VALIDATORS` consts — no config account
+  to read).
 - **Args:** `threat_id: [u8; 32]`, `gene_hash: [u8; 32]`, `ipfs_cid: String`.
-- **Logic:** count how many of the 5 known validator pubkeys are present *and* marked
-  `is_signer` on the transaction; `require!(count >= 3, ErrorCode::InsufficientQuorum)`.
+- **Logic:** count how many of the 5 hardcoded validator pubkeys are present *and* marked
+  `is_signer` on the transaction; `require!(count >= POI_QUORUM, ErrorCode::InsufficientQuorum)`.
   If satisfied, write/overwrite the `GenomeEntry` PDA with `epigenetic_status = 0`
   (Active) — this is the on-chain replacement for `consensus::commit_gene()` +
   `GenomeRegistry::publish()` combined.
@@ -109,28 +139,115 @@ Account types (PDAs), mirroring `registry.rs`'s row shapes:
   transaction needs signatures from 3+ separate Lymph Node keypairs before submitting —
   i.e. an off-chain step to collect co-signatures first. That collection flow is not part
   of steps 1–3; it's implied client work for a later slice.
+- **Known forward gap (step 4's territory, not fixed here):** `init_if_needed` means a
+  fresh `commit_gene` call would silently overwrite an already-`Suppressed` entry back to
+  `Active`, since suppression tracking doesn't exist until `suppress_gene` (box 4). Not a
+  regression within steps 1–3's scope, but worth remembering when box 4 is staged so it
+  isn't forgotten.
 
 ## Open questions / assumptions to confirm before "implement"
 
-1. **`behavioral_schema_hash` vs. raw schema** — I'm assuming we store the hash only (rent
-   economics) and keep the actual `Vec<Action>`/schema off-chain (e.g. still in the local
-   `registry.rs` cache, keyed by the same `ThreatId`). If you want the full schema on-chain,
-   the account gets variable-size and more expensive — say so.
-2. **`LymphNodeConfig` bundled into step 1** — plan.md's box 1 wording only names Threat +
-   Genome account types; I added this third account type because box 3's multisig can't be
-   checked without somewhere to store the 5 validator pubkeys. Flagging in case you'd rather
-   track it as its own line item.
-3. **Named optional `Signer` fields (5) vs. `remaining_accounts` loop** — named fields are
-   more explicit/readable in the IDL; `remaining_accounts` is more flexible if the validator
-   set size ever changes. Defaulting to named fields for a fixed 3-of-5 unless you'd rather
-   keep it dynamic.
-4. **Mobilization event on `submit_threat`** — using an Anchor `event!` emission since
-   there's no return-value equivalent to `ReportOutcome::Mobilized` on-chain. Confirm that's
-   an acceptable substitute for the client-side "trigger network-wide mobilization" behavior.
+1. ~~`behavioral_schema_hash` vs. raw schema~~ — **resolved by implementation**: shipped
+   storing the hash only (rent economics); raw schema stays off-chain. You didn't object
+   before saying "implement," so treating this as accepted — `source-of-truth.md` was
+   updated to match. Revisit only if that's wrong.
+2. ~~`LymphNodeConfig` bundled into step 1~~ — **resolved**: dropped in favor of hardcoded
+   `pub const` validator pubkeys, matching this codebase's existing threshold pattern. Only
+   2 account types now, matching plan.md's box 1 wording exactly.
+3. ~~Named optional `Signer` fields (5) vs. `remaining_accounts` loop~~ — **resolved by
+   implementation**: shipped with 5 named fields. Same "no objection before implement"
+   basis as #1.
+4. ~~Mobilization event on `submit_threat`~~ — **resolved by implementation**: shipped as an
+   Anchor `event!` emission, firing once at the crossing rather than on every repeat
+   sighting past threshold (a deliberate, noted deviation from the mock's `>=` check, which
+   re-fires every time). Same basis as #1.
+
+## Step 4 — `suppress_gene` instruction
+
+Mirrors `ledger::registry::GenomeRegistry::suppress()` /
+`ledger::registry::SuppressorToken` / `ledger::client::MockConjugationLink::broadcast_suppressor()`
+in the Rust mock — the on-chain replacement for that broadcast-and-apply pair, collapsed
+into a single instruction (no separate "broadcast then drain" step needed once suppression
+*is* the transaction itself).
+
+- **New file:** `programs/bio_digital_defense/src/instructions/suppress_gene.rs`, wired into
+  `instructions.rs` and `lib.rs` the same way as the other two.
+- **Accounts:** `genome_entry` — **plain `mut`, not `init_if_needed`**. Suppressing a gene
+  that doesn't exist is meaningless, so the account must already exist; Anchor's normal
+  deserialization already errors (`AccountNotInitialized`) if it doesn't, no extra check
+  needed. Plus the same 5 named optional `Signer<'info>` Lymph Node validator fields as
+  `commit_gene`.
+- **Args:** `threat_id: [u8; 32]` (for the `seeds` constraint).
+- **Logic:** same quorum count as `commit_gene` — reusing `LYMPH_NODE_VALIDATORS`/
+  `POI_QUORUM`, `require!(signed_count >= POI_QUORUM, ErrorCode::InsufficientQuorum)` — then
+  `entry.epigenetic_status = 1`. This is the "same multisig authority" plan.md's box 4
+  wording calls for; no new validator set or config needed since none was ever introduced
+  in step 1.
+
+**Resolves the forward gap flagged when `commit_gene` was implemented:** with
+`suppress_gene` now designed, the earlier note (`commit_gene`'s `init_if_needed` would
+silently reactivate an already-suppressed gene) becomes a real, fixable interaction, not
+just a future concern. **Recommendation:** add a guard to the *already-implemented*
+`commit_gene` — `require!(entry.epigenetic_status != 1, ErrorCode::GeneSuppressed)` before
+overwriting an existing entry — so a fresh `commit_gene` call can't silently undo a
+suppression. This touches code from steps 1–3, not just new step-4 code, so flagging it
+explicitly rather than bundling it in silently: **confirm you want this guard added** when
+this gets implemented; without it, `suppress_gene` "works" but has no lasting effect against
+a repeated `commit_gene`.
+
+## Step 5 — Deploy to Solana devnet
+
+- **Sequencing:** deploy *after* step 4 lands, not before — `anchor deploy` should ship the
+  program with `suppress_gene` already included, so this is one deploy rather than a deploy
+  now plus an `anchor upgrade` later once step 4 exists. plan.md's box order (4 then 5)
+  already implies this; stating it so it isn't done out of order by mistake.
+- **Blocking gap found this session:** no default wallet keypair exists yet at
+  `~/.config/solana/id.json` (the path `Anchor.toml`'s `[provider] wallet` points at) —
+  `anchor deploy` needs one to pay for the deployment. A `solana-keygen new` for this
+  specific path is a prerequisite, distinct from the 5 Lymph Node keypairs (those sign
+  attestations; this one is the deployer/payer).
+- **Second gap:** the global `solana config get` currently reports `RPC URL:
+  https://api.mainnet-beta.solana.com` — mainnet, not devnet. `Anchor.toml`'s
+  `[provider] cluster = "devnet"` governs `anchor deploy` itself, but any plain `solana`
+  CLI command (airdrop, `program show`, balance checks) run without an explicit `--url
+  devnet` would silently hit mainnet instead. Recommend `solana config set --url devnet`
+  before doing anything else, to remove that footgun for the rest of this phase.
+- **Funding:** `target/deploy/bio_digital_defense.so` is **178,776 bytes**. Solana program
+  deployment rent-exemption cost scales with binary size (roughly on the order of 1+ SOL
+  for a program this size, using the upgradeable BPF loader's buffer + program accounts) —
+  a single `solana airdrop` on devnet is rate-limited (typically ~1–2 SOL per request), so
+  this may need more than one airdrop call, or hitting a devnet faucet website if the CLI
+  faucet is rate-limited that day. Flagging so it isn't a surprise mid-deploy.
+- **Command:** `anchor deploy` (cluster already set via `Anchor.toml`, so no `--provider.cluster`
+  flag needed unless overriding).
+- **After deploy:** the program ID doesn't change (Anchor deploys *to* the address in the
+  already-generated `target/deploy/bio_digital_defense-keypair.json`,
+  `FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x`) — `Anchor.toml`'s `[programs.devnet]` entry
+  is already correct and needs no update. Verify with
+  `solana program show FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x --url devnet`.
+- **Not included in step 5** (per plan.md's box wording): publishing the IDL on-chain
+  (`anchor idl init`) isn't required for the demo to work, just for other clients to
+  fetch the IDL directly from the chain — noting it as an optional extra, not proposing it
+  unless asked.
+- **Note on action weight:** unlike steps 1–4 (local files only), this step performs a real,
+  visible action on a public network — the program becomes live and queryable by anyone on
+  devnet, and stays there. Low stakes (devnet, no real funds) but not purely local/reversible
+  the way file edits are, so flagging it here rather than treating it as routine.
+
+## Open questions / assumptions to confirm before "implement" (steps 4–5)
+
+5. **`commit_gene` guard against re-activating a suppressed gene** (see Step 4 above) — do
+   you want this added to the already-implemented `commit_gene`, or left as-is for now?
+6. **Wallet + devnet config setup** — OK to run `solana-keygen new` for the default wallet
+   path and `solana config set --url devnet` as part of implementing step 5?
+7. **Airdrop funding** — OK to run `solana airdrop` (possibly more than once) against
+   devnet to fund the deploy, and to proceed with the actual `anchor deploy` to a public
+   devnet once funded?
 
 ## Recommendation
 
-Steps 1–3 are self-contained new-file work in `programs/` — no edits to existing
-`src-tauri` files, so no merge collision with owner A. The one real blocker is tooling
-(Solana CLI / Anchor CLI / `avm` not installed) — that install is a prerequisite, not
-optional, once you say "implement."
+Steps 1–3 are done. Steps 4–5 as staged above are still self-contained (step 4 is another
+new file in `programs/`; step 5 is tooling/config + a deploy command, no source changes) —
+no merge collision with owner A. The one piece of already-implemented code this touches is
+`commit_gene`'s missing suppressed-gene guard (Q5) — flagged, not applied, pending
+confirmation.

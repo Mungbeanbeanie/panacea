@@ -121,9 +121,11 @@ consumers, not validators).
 
 - **Role:** the collective memory tracking what malware looks like across the world.
 - **Data:** an Anchor **program account (PDA)** keyed by `Threat_ID` (cryptographic hash of
-  the behavioral vector), holding `Behavioral_Schema` (the specific sequence of syscalls and
-  network ports flagged in Stage 1) and `Confidence_Score` (an integer counting how many
-  independent Scouts globally have seen this trajectory).
+  the behavioral vector), holding a hash of the `Behavioral_Schema` (the specific sequence
+  of syscalls and network ports flagged in Stage 1 — hashed rather than stored raw, to keep
+  the account fixed-size and rent-cheap; the raw schema stays in the node's local cache) and
+  `Confidence_Score` (an integer counting how many independent Scouts globally have seen
+  this trajectory).
 - **Mechanism:** when a Scout on Machine A logs a new vector, its endpoint signs and submits
   a `submit_threat` instruction with its own devnet keypair, creating the PDA if new. When
   Machine B's Scout sees a matching trajectory, its `submit_threat` call increments

@@ -180,11 +180,11 @@ Wave 4 (real backbone):             [11]←5,6,8,9
 land · replaces the mocked ledger/consensus/storage mechanics that Phases 5, 6, 8, and 9
 left in place with real Solana devnet integration.
 
-- [ ] Anchor workspace (`programs/bio_digital_defense/`) with Threat Registry and Genome
+- [x] Anchor workspace (`programs/bio_digital_defense/`) with Threat Registry and Genome
       Registry account types (PDAs)
-- [ ] `submit_threat` instruction: create/update a Threat Registry PDA, increment
+- [x] `submit_threat` instruction: create/update a Threat Registry PDA, increment
       `Confidence_Score`
-- [ ] `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA — this
+- [x] `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA — this
       is Proof of Immunity
 - [ ] `suppress_gene` instruction: same multisig authority flips `Epigenetic_Status` to 1
 - [ ] Deploy the program to Solana devnet; record the program ID in `Anchor.toml`
