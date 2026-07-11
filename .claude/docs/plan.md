@@ -3,8 +3,9 @@
 A discrete, phased checklist for the hackathon build. It conforms to
 [source-of-truth.md](source-of-truth.md) (canonical) — thresholds, stage boundaries, and
 ledger fields come from there. PoC bar throughout: **compiles + demo works** (see
-[Build, Run, Test](build-run-test.md)); mock the heavy pieces (real ZK, PoI consensus, live
-P2P, Firecracker, IPFS) and show the flow.
+[Build, Run, Test](build-run-test.md)). The chain (Solana devnet), consensus finality, the
+on-chain Anchor program, PoI's multisig gate, and IPFS gene storage are all real — only the
+malware/virus itself and the MicroVM/Wasm sandbox host stay simulated.
 
 **How to use this file:** check off `- [ ]` boxes as build tasks land. Owners (A/B/C, see
 [Collaboration](collaboration.md)) mostly edit their own phase's boxes, so completion
@@ -24,6 +25,7 @@ Wave 0 (blocking, land together):   [0]
 Wave 1 (fully parallel branches):   [1] [2] [3] [4] [5] [10]
 Wave 2 (unlock as deps merge):      [6]←5      [7]←4
 Wave 3 (integration):               [9]←6,3    [8]←6,7
+Wave 4 (real backbone):             [11]←5,6,8,9
 ```
 
 | Phase | Owner | Depends on (hard) | Parallel-safe after P0? | Decouple via |
@@ -39,6 +41,7 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 | 8 Stage 4 Consensus | A+B | 0, **6**, **7** | after 6+7 | mock proof |
 | 9 Kill-switch | B | 0, **6**, **3** | after 6 | — |
 | 10 Dashboard | C | 0 | ✅ (parallel throughout) | mock event streams |
+| 11 Solana migration | B | 0, **5**, **6**, **8**, **9** | after 5+6+8+9 | — (replaces the mocks those phases left in place) |
 
 **Merge-risk caveats (beyond Phase 0's shared hotspots):**
 - `ledger/registry.rs` holds **both** the Threat (Phase 2) and Genome (Phase 6) tables —
@@ -171,3 +174,32 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 - [x] Every live view handles the no-data / stream-dropped state
 
 **Done when:** the three views render live state and degrade gracefully when a stream drops.
+
+## Phase 11 — Solana Migration (Real Blockchain Backbone)
+**Owner:** B · **Depends on:** 0, **5**, **6**, **8**, **9** · **Parallel-safe:** after those
+land · replaces the mocked ledger/consensus/storage mechanics that Phases 5, 6, 8, and 9
+left in place with real Solana devnet integration.
+
+- [ ] Anchor workspace (`programs/bio_digital_defense/`) with Threat Registry and Genome
+      Registry account types (PDAs)
+- [ ] `submit_threat` instruction: create/update a Threat Registry PDA, increment
+      `Confidence_Score`
+- [ ] `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA — this
+      is Proof of Immunity
+- [ ] `suppress_gene` instruction: same multisig authority flips `Epigenetic_Status` to 1
+- [ ] Deploy the program to Solana devnet; record the program ID in `Anchor.toml`
+- [ ] Rust core: replace `ledger/client.rs`'s mock transport with `solana-client`/
+      `solana-sdk` RPC calls
+- [ ] Rust core: `ledger/state.rs` becomes commitment-level account reads (drop the custom
+      Merkle-path code)
+- [ ] `ledger/registry.rs` becomes a local read-through cache of the on-chain PDAs
+- [ ] Devnet keypair provisioning per endpoint (Scout signer) and per Lymph Node validator
+      (multisig signer), funded via faucet
+- [ ] Gene binaries: real IPFS pinning-service integration (upload on `commit_gene`, fetch
+      by CID before Soldier execution)
+- [ ] Re-run `suppression-path-test` and `sandbox-isolation-check` against the live Solana
+      path
+
+**Done when:** a real devnet transaction commits a gene to the Genome Registry PDA under
+multisig, a Soldier fetches and verifies it via RPC + real IPFS CID, and a `suppress_gene`
+transaction halts it within seconds — no mocks left in the ledger path.

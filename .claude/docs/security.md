@@ -21,9 +21,14 @@ lies about what it does. Keep the safety story honest and simple.
   Soldier execution preserves the guarantee that `Epigenetic_Status = 1` halts a cure
   immediately, checked *before* any gene fetch/exec. Keep the
   [`suppression-path-test`](../skills/suppression-path-test/SKILL.md) check passing.
-- **Verify before trusting the network.** Every threat and gene fetched from peers or IPFS
-  is untrusted until verified against the State Ledger Merkle root. In the PoC you may mock
-  the network, but the verification step stays in the flow — don't skip it and pretend.
+- **Verify before trusting the network.** Every threat and gene account is read from Solana
+  at `finalized` (or at minimum `confirmed`) commitment — don't trust an unconfirmed read.
+  Every gene binary fetched from IPFS by `IPFS_CID` gets its hash checked against the
+  on-chain `Wasm_Gene_Hash` before a Soldier runs it. Don't skip either check and pretend.
+- **Devnet keys are still real keys.** Endpoint and Lymph Node keypairs sign real devnet
+  transactions. Never commit a keypair file to the repo, even though devnet SOL has no
+  value — treat key hygiene the same way you would for mainnet. Losing or leaking a Lymph
+  Node keypair weakens the 3-of-5 PoI threshold.
 - **Don't commit real malware, live exploit chains, or captured host telemetry.** Use
   synthetic fixtures. If unsure whether something is safe to commit, don't — ask.
 - **Least privilege in Tauri.** Grant capabilities in `tauri.conf.json` narrowly. Don't

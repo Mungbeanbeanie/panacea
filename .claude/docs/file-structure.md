@@ -9,6 +9,13 @@ bio-digital-defense/
 ├── .claude/                     # Claude dev setup: docs, agents, skills
 ├── .github/                     # CI/CD: compile + test binaries per platform
 │
+├── programs/                    # Anchor on-chain program (Solana devnet)      [owner B]
+│   └── bio_digital_defense/
+│       ├── Cargo.toml           # Program crate manifest (anchor-lang, separate from src-tauri)
+│       └── src/lib.rs           # Threat + Genome Registry PDAs; submit_threat, commit_gene,
+│                                 # suppress_gene instructions; 3-of-5 PoI multisig gate
+├── Anchor.toml                  # Anchor workspace config: cluster (devnet), program ID
+│
 ├── src-tauri/                   # Rust core (the backend engine)          [owners A + B]
 │   ├── Cargo.toml               # Rust dependency manifest — source of truth for crates
 │   ├── tauri.conf.json          # Tauri config: windows, capabilities/permissions
@@ -25,9 +32,11 @@ bio-digital-defense/
 │       │   └── alleles.rs       # Exploit-primitive matrix + combinatorial fuzz driver
 │       └── ledger/                                                                    [B]
 │           ├── mod.rs           # Ledger facade the rest of the core talks to
-│           ├── client.rs        # P2P/WebSocket transport ("conjugation")
-│           ├── state.rs         # Local Merkle-tree construction + proof verification
-│           └── registry.rs      # Local cache of Threat + Genome tables
+│           ├── client.rs        # Solana RPC transaction submission ("conjugation"),
+│                                 # via solana-client/solana-sdk
+│           ├── state.rs         # Commitment-level account reads (light-client wrapper)
+│           └── registry.rs      # Local read-through cache mirroring the on-chain
+│                                 # Threat + Genome PDAs
 │
 └── landing/                     # React + Vite dashboard (read-only)         [owner C]
     ├── CLAUDE.md                # Frontend-specific guidance (scoped)
@@ -52,6 +61,6 @@ bio-digital-defense/
 - **Rust modules communicate through the `mod.rs` facade** of each domain (agents,
   evolution, ledger) — not by reaching into sibling files' internals. This is also what
   lets owners A and B work in parallel without editing each other's files.
-- **`Cargo.toml` and `package.json` are the only sources of truth for dependencies and
-  versions.** Don't assert a crate/package version from memory (Working Agreement, Rule 4)
-  — read the file.
+- **`Cargo.toml`, `package.json`, and `Anchor.toml`/the `programs/` crate's `Cargo.toml` are
+  the only sources of truth for dependencies and versions.** Don't assert a crate/package
+  version from memory (Working Agreement, Rule 4) — read the file.

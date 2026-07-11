@@ -1,102 +1,136 @@
-# Current Dev Plan — Phase 9 (Epigenetic Suppression Kill-Switch)
+# Current Dev Plan — Phase 11, Steps 1–3 (Solana Migration: Anchor Program Foundations)
 
-> Scratch planning doc only (`.josh/` is gitignored). Nothing here is implemented until the
-> user says **"implement"**. Conforms to `.claude/docs/source-of-truth.md` (canonical).
-> **First-class safety** — keep `suppression-path-test` passing.
->
-> **⚠️ Rewritten after `git pull` (HEAD `6d0f325`).** The teammate landed **Phase 6**
-> (`a99ae3f`) and **Phase 7** (`6d0f325`). Phase 6 already implemented the kill-switch core,
-> so most of this phase is **done**. What follows is the corrected, much smaller remainder.
+> Scratch planning doc only (`.josh/` is gitignored). **Nothing here is implemented until
+> the user says "implement."** Conforms to `.claude/docs/source-of-truth.md` (canonical)
+> and `.claude/docs/plan.md` Phase 11 (owner B).
 
-## Scope (`.claude/docs/plan.md:157–160`) — status after the pull
+## Scope (`.claude/docs/plan.md` Phase 11, boxes 1–3 only)
 
-| # | Phase 9 box | Status |
+| # | Phase 11 box | This doc covers it? |
 |---|---|---|
-| 1 | Epigenetic Suppressor Token **broadcast** → set `Epigenetic_Status = 1` | **Partial** — flag-set done; broadcast/receipt missing |
-| 2 | Soldiers reading Ledger 3 immediately stop executing that cure | ✅ **Done** |
-| 3 | Status check happens **before** any gene fetch/exec | ✅ **Done** |
-| 4 | Keep `suppression-path-test` passing | ✅ **Done** (passing) |
+| 1 | Anchor workspace (`programs/bio_digital_defense/`) with Threat Registry + Genome Registry account types (PDAs) | ✅ staged below |
+| 2 | `submit_threat` instruction: create/update a Threat Registry PDA, increment `Confidence_Score` | ✅ staged below |
+| 3 | `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA (Proof of Immunity) | ✅ staged below |
+| 4 | `suppress_gene` instruction | ❌ out of scope — next slice |
+| 5–11 | Devnet deploy, `ledger/` rewiring, keypair provisioning, real IPFS, test re-run | ❌ out of scope — later slices |
 
-**Done when:** flipping `Epigenetic_Status` to 1 halts the cure in seconds, before any
-fetch/exec. — *Logic proven; not yet demonstrable through the live daemon (see Gap B).*
+This is purely the **on-chain program side** (new `programs/` crate). It does **not** touch
+`src-tauri/src/ledger/{client,state,registry,consensus}.rs` — those stay on their current
+mock implementation until a later slice rewires them to call this program over RPC. No
+collision with owner A's `agents/`.
 
-## What already exists (verified this session)
+## Prerequisite gap (checked this session)
 
-In `agents/soldier.rs`, the teammate's `resolve_and_run(threat_id, genome, ipfs, state_ledger,
-gene_proof, sandbox) -> PharmacyOutcome` **is the kill-switch**:
+Neither the Solana CLI nor Anchor CLI nor `avm` is installed on this machine (`solana`,
+`anchor`, `avm` all resolve to "command not found"; only `cargo`/`rustc` 1.95.0 are
+present). Nothing here can actually build or deploy until those are installed. Flagging
+this now so it isn't a surprise when "implement" is said — this is a one-time setup step,
+not part of the 3 code items above, but blocks them.
+
+## What already exists (the mock this replaces/extends — read this session)
+
+- **`src-tauri/src/ledger/registry.rs`** — `ThreatRegistry` (`report()`/`get()`,
+  `MOBILIZATION_THRESHOLD = 2`) and `GenomeRegistry` (`publish()`/`get()`/`suppress()`),
+  both in-memory `HashMap<ThreatId, _>`. `ThreatId`/`GeneHandle` are `[u8; 32]`
+  (`src-tauri/src/core/mod.rs`) — Sha256 digests, so they drop into Anchor account seeds
+  or fields with no conversion.
+- **`src-tauri/src/ledger/consensus.rs`** — the current *mock* Stage 4: `ImmunityProof`
+  (commitment hash, no real ZK), `POI_QUORUM = 2`, a hardcoded 3-`Validator` set,
+  `run_poi_consensus()`, `commit_gene()` (free fn, writes to `GenomeRegistry` + folds it
+  into a mock `MockConjugationLink` block). This free function is what the Anchor
+  `commit_gene` *instruction* below actually replaces — same name, different layer (Rust
+  core fn → on-chain instruction).
+- **`src-tauri/src/ledger/client.rs`** — `MockConjugationLink`: P2P stand-in with
+  `commit_block`, `broadcast_suppressor`/`drain_suppressors`, `threat_proof`/`genome_proof`.
+  Superseded by real Solana RPC calls in a later slice (Phase 11 box 6), not this one.
+
+None of this is deleted or edited by steps 1–3 — it's the reference for what the new
+program's behavior needs to match.
+
+## Step 1 — Anchor workspace & account types
+
+New files, no existing file touched:
 
 ```
-get(threat_id)                        → NoCureAvailable if absent
-  └─ if Epigenetic_Status == Suppressed → return Suppressed   ← FIRST, before verify/fetch/run
-       (else) verify_gene against Merkle root → GeneHashUnverified if bad
-       fetch bytecode from MockIpfsStore
-       sandbox.run(&gene.sequence); sandbox.teardown()  ← in-sandbox only, then apoptosis
+Anchor.toml                              # [provider] cluster = "devnet"; program id (placeholder until first deploy)
+programs/
+└── bio_digital_defense/
+    ├── Cargo.toml                       # anchor-lang dep; crate-type ["cdylib", "lib"]
+    └── src/lib.rs                       # declare_id!, account structs, instructions
 ```
 
-- **Order is correct:** suppression is the first branch after lookup — before Merkle verify,
-  before `ipfs.fetch`, before `Sandbox::run`. ✅ (matches `suppression-path-test` + `security.md`)
-- **Test already passing:** `pharmacy_flow_tests::suppressed_gene_is_halted_before_any_fetch`
-  asserts `PharmacyOutcome::Suppressed` **and `ipfs.fetch_calls() == 0`** — I ran it: **ok**
-  (all 4 pharmacy-flow tests green).
-- **Flag setter:** `ledger::registry::GenomeRegistry::suppress(&threat_id)` flips
-  `Active → Suppressed`.
-- **Transport available for a real broadcast:** `ledger::client::MockConjugationLink`
-  (commit/fetch-header/Merkle-path). No suppressor-token type rides it yet.
+Account types (PDAs), mirroring `registry.rs`'s row shapes:
 
-## What actually remains
+- **`ThreatEntry`** — seeds `[b"threat", threat_id]`
+  - `threat_id: [u8; 32]`
+  - `behavioral_schema_hash: [u8; 32]` — **assumption, flagged below**: hash of the
+    schema, not the raw `Vec<Action>` sequence, to keep the account fixed-size and
+    rent-cheap.
+  - `confidence_score: u32`
+  - `bump: u8`
+- **`GenomeEntry`** — seeds `[b"genome", threat_id]`
+  - `threat_id: [u8; 32]`
+  - `gene_hash: [u8; 32]`
+  - `ipfs_cid: String` (bounded, e.g. max 64 bytes — real CIDs fit)
+  - `epigenetic_status: u8` (0 = Active, 1 = Suppressed — matches `EpigeneticStatus` today)
+  - `bump: u8`
+- **`LymphNodeConfig`** — singleton account, not itemized in plan.md's box 1 wording but
+  required to make box 3's multisig check possible: holds the 5 Lymph Node validator
+  `Pubkey`s and the threshold (`3`). Initialized once via an `initialize_lymph_nodes`
+  instruction (small addition, bundled into this step since box 3 can't work without it).
 
-### Gap A — Step 1's "broadcast" (owner-B territory)
-`suppress()` is a **local method call**; there is no *Epigenetic Suppressor Token* that is
-broadcast over the (mock) conjugation transport and applied on receipt. To satisfy step 1 as
-written, add a thin token + apply path, e.g.:
-- a `SuppressorToken { threat_id }` (or gene id) type,
-- `MockConjugationLink::broadcast_suppressor(token)` / a receive hook that calls
-  `genome.suppress(&token.threat_id)` on the local registry.
+## Step 2 — `submit_threat` instruction
 
-This lives in **`ledger/` (owner B)** — `registry.rs` + `client.rs`. **Coordinate before
-touching** (Rule 3 / collaboration). It may already be on the teammate's list since Phase 9 is
-theirs.
+- **Accounts:** `threat_entry` (`init_if_needed` PDA), `reporter` (`Signer`, pays rent on
+  first sighting), `system_program`.
+- **Args:** `threat_id: [u8; 32]`, `behavioral_schema_hash: [u8; 32]`.
+- **Logic:** mirrors `ThreatRegistry::report()` — if the PDA is being initialized this call,
+  set `confidence_score = 1`; otherwise increment it. Reuses `MOBILIZATION_THRESHOLD = 2`
+  from `registry.rs` for the "just crossed the line" check (emits an Anchor `event!` rather
+  than returning a Rust enum, since there's no caller to hand a `ReportOutcome` to
+  on-chain) — client code reads the emitted event or re-checks `confidence_score` after the
+  tx confirms to decide whether to mobilize.
+- Any funded devnet keypair can call this (every Scout-bearing endpoint signs its own
+  report) — no multisig gate here, matching today's `report()` being open to any caller.
 
-### Gap B — Live wiring so the kill-switch is demonstrable end-to-end
-`resolve_and_run` is currently called **only from its own tests**; the live Soldier daemon
-(`handle_wake` → `soldier.neutralize()`, the Phase-3 mock) never invokes it. So "halts in
-seconds" isn't observable in the running app. Closing this = wiring the pharmacy flow into the
-live wake lifecycle:
-- thread a shared `GenomeRegistry` + `MockIpfsStore` + `StateLedger` (+ a proof source) into
-  `soldier::run`,
-- replace `neutralize()` with `resolve_and_run(...)` in `handle_wake`,
-- a runtime suppressor broadcast (Gap A) then halts the next wake's cure.
+## Step 3 — `commit_gene` instruction (Proof of Immunity)
 
-This is **Phase 6's Soldier-side integration as much as Phase 9's** — it crosses the
-agents/ledger boundary and is a bigger, coordination-heavy change.
+- **Accounts:** `genome_entry` (`init_if_needed` PDA), `lymph_node_config` (read, to check
+  the known validator set), `payer`, `system_program`, plus each Lymph Node validator as an
+  optional `Signer` account (`remaining_accounts` or 5 named optional `Signer<'info>`
+  fields — leaning toward named fields for clarity at 5 validators).
+- **Args:** `threat_id: [u8; 32]`, `gene_hash: [u8; 32]`, `ipfs_cid: String`.
+- **Logic:** count how many of the 5 known validator pubkeys are present *and* marked
+  `is_signer` on the transaction; `require!(count >= 3, ErrorCode::InsufficientQuorum)`.
+  If satisfied, write/overwrite the `GenomeEntry` PDA with `epigenetic_status = 0`
+  (Active) — this is the on-chain replacement for `consensus::commit_gene()` +
+  `GenomeRegistry::publish()` combined.
+- Client-side implication (not built in this step, just noted): the node assembling the
+  transaction needs signatures from 3+ separate Lymph Node keypairs before submitting —
+  i.e. an off-chain step to collect co-signatures first. That collection flow is not part
+  of steps 1–3; it's implied client work for a later slice.
 
-## ⚠️ Ownership question (needs your call before any implementation)
+## Open questions / assumptions to confirm before "implement"
 
-Phase 9 is **owner B**, and the teammate is actively in `soldier.rs`/`registry.rs`/`client.rs`
-(they just implemented the core). Both remaining gaps sit largely in **their** files. Options:
-- **Leave Phase 9 to owner B** (recommended) — the core is theirs and done; Gaps A/B are the
-  natural continuation of their Phase 6 work. I stay out to avoid merge collisions.
-- **I take Gap B's agents-side wiring only** (`soldier::run` / `scout::spawn_demo`, my files),
-  coordinating the shared-state signature with B.
-- **I take Gap A** (their `ledger/` files) — only with explicit go-ahead.
-
-## Source-of-truth conformance (of what exists)
-- Soldier queries Ledger 3 **on demand** by `Threat_ID` (`genome.get`), never a passive scan. ✅
-- `Epigenetic_Status` checked **before** verify/fetch/exec; suppressed returns before
-  `ipfs.fetch`/`Sandbox::run`. ✅
-- Gene executes **only** in the sandbox (`Sandbox::run`), never the host. ✅
-- `suppression-path-test` invariant satisfied and covered by a passing test. ✅
+1. **`behavioral_schema_hash` vs. raw schema** — I'm assuming we store the hash only (rent
+   economics) and keep the actual `Vec<Action>`/schema off-chain (e.g. still in the local
+   `registry.rs` cache, keyed by the same `ThreatId`). If you want the full schema on-chain,
+   the account gets variable-size and more expensive — say so.
+2. **`LymphNodeConfig` bundled into step 1** — plan.md's box 1 wording only names Threat +
+   Genome account types; I added this third account type because box 3's multisig can't be
+   checked without somewhere to store the 5 validator pubkeys. Flagging in case you'd rather
+   track it as its own line item.
+3. **Named optional `Signer` fields (5) vs. `remaining_accounts` loop** — named fields are
+   more explicit/readable in the IDL; `remaining_accounts` is more flexible if the validator
+   set size ever changes. Defaulting to named fields for a fixed 3-of-5 unless you'd rather
+   keep it dynamic.
+4. **Mobilization event on `submit_threat`** — using an Anchor `event!` emission since
+   there's no return-value equivalent to `ReportOutcome::Mobilized` on-chain. Confirm that's
+   an acceptable substitute for the client-side "trigger network-wide mobilization" behavior.
 
 ## Recommendation
-Phase 9's safety-critical core is **already complete and passing** — no action needed to make
-the kill-switch *correct*. The only open items are step 1's **broadcast** wrapper (Gap A) and
-**live daemon wiring** (Gap B), both mostly in owner B's files. **Recommend: confirm with the
-teammate before I touch anything here.** If you want a demonstrable live kill-switch, the
-highest-value slice is Gap B's agents-side wiring — say so and I'll plan/implement just that.
 
-## Open questions for the user
-- **Q1:** Given the core is done + owner B's territory, do you want me to do anything on Phase 9
-  at all, or leave it to your teammate?
-- **Q2:** If yes — Gap A (broadcast, in `ledger/`) or Gap B (live wiring, spanning `agents/`)?
-- **Q3:** For Gap B, OK to change `soldier::run`'s signature (shared registry/IPFS/state) and
-  touch `scout::spawn_demo` again?
+Steps 1–3 are self-contained new-file work in `programs/` — no edits to existing
+`src-tauri` files, so no merge collision with owner A. The one real blocker is tooling
+(Solana CLI / Anchor CLI / `avm` not installed) — that install is a prerequisite, not
+optional, once you say "implement."

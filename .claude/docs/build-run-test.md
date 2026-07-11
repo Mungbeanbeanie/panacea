@@ -21,7 +21,19 @@ cargo test
 
 # Frontend unit tests (if configured in package.json)
 npm test
+
+# On-chain program (Anchor) — from repo root once Anchor.toml exists
+anchor build
+anchor deploy --provider.cluster devnet   # confirm exact script/cluster name in Anchor.toml
+
+# One-time devnet keypair setup per endpoint / Lymph Node validator (no real funds)
+solana-keygen new -o ~/.config/solana/id.json
+solana airdrop 2 --url devnet
 ```
+
+Anchor/Solana command names above are the standard CLI surface — confirm the exact
+provider/cluster config against `Anchor.toml` once it exists rather than assuming (Working
+Agreement, Rule 4).
 
 ## Definition of done (hackathon PoC)
 

@@ -13,8 +13,10 @@ engineering meaning. Reason with the engineering meaning.
 
 An autonomous, decentralized, zero-trust anti-virus ecosystem modeled on biological
 immunology. It shifts cybersecurity from static, vendor-dependent signature patching to a
-real-time, crowd-sourced Bio-Digital Defense System powered by a unified blockchain
-backbone.
+real-time, crowd-sourced Bio-Digital Defense System powered by a real blockchain backbone —
+**Solana** (devnet for the PoC). The threats themselves stay simulated (synthetic fixtures,
+never real malware); the chain, consensus finality, on-chain program, and gene storage are
+real, working end to end the way they would in a shippable product.
 
 ## 1. The Autonomous Agent Caste System
 
@@ -42,7 +44,7 @@ deterministic 4-stage pipeline before a global cure is minted.
 [STAGE 3: Lymph Node Regression Matrix] ──► Top 5,000 Apps Multi-OS Testing
            │
            ▼
-[STAGE 4: Consensus & Ledger Commitment] ──► ZK-Proof Validated via PoI
+[STAGE 4: Consensus & Ledger Commitment] ──► 3-of-5 Multisig (PoI) → Solana Devnet
 ```
 
 ### Stage 1 — Behavioral Trajectory Scoring (Scouts)
@@ -84,60 +86,74 @@ target behavior but causes a single whitelisted application to crash or leak mem
 
 ### Stage 4 — Consensus & Ledger Commitment
 
-If the mutation passes the regression matrix, the local node generates a **Zero-Knowledge
-Proof (ZK-Proof)** confirming that the gene neutralizes the specific threat signature and
-passed the allergy check — without exposing raw host details or the malware payload itself.
-Network validators verify the proof via **Proof of Immunity (PoI)** consensus and commit it
-to the blockchain.
+If the mutation passes the regression matrix, each participating Lymph Node signs an
+attestation (with its own persistent Solana keypair) confirming the gene neutralizes the
+specific threat signature and passed the allergy check. Once a threshold of **3-of-5**
+Lymph Node signatures is collected — **Proof of Immunity (PoI)** — the local node submits a
+`commit_gene` instruction to the on-chain Anchor program. The program verifies the multisig
+threshold on-chain and, if satisfied, writes the Genome Registry entry for that `Threat_ID`.
+Solana's own network consensus (Proof of History + Proof of Stake, via devnet validators)
+finalizes the transaction; PoI is an application-level gate enforced by the program, not a
+replacement for or competitor to Solana's block-level consensus. PoI does not hide the
+malware payload via zero-knowledge cryptography — it's a real multisig attestation, not a
+ZK-proof; no raw host telemetry or the malware payload is included in the instruction data
+regardless.
 
 ## 3. The 3-Ledger Blockchain Architecture
 
 The blockchain is three highly specialized, interacting state tables running on top of a
-single, unified ledger layer. This separates targeting telemetry from execution payload,
-letting local endpoints behave as **ultra-light clients**.
+single, unified ledger layer — **Solana**. This separates targeting telemetry from
+execution payload, letting local endpoints behave as **ultra-light clients** (RPC
+consumers, not validators).
 
-### Ledger 1 — The State Ledger (Cryptographic Core)
+### Ledger 1 — The State Ledger (Solana's Native Chain)
 
 - **Role:** the absolute source of truth and security backbone.
-- **Data:** chronological block headers, transaction timestamps, validator signatures, and
-  **Merkle Roots** of both the Threat Registry and the Genome Registry.
-- **Mechanism:** local endpoints download only this ledger. To verify that a threat or a
-  cure is legitimate, they don't read a giant linked list — they request a tiny
-  cryptographic path from the network and verify it against the local Merkle Root. This
-  mitigates blockchain data bloat on the user's PC.
+- **Data:** Solana's own block/account state — chronological blocks, validator signatures,
+  and account state roots. No custom chain or custom Merkle scheme is built on top of it.
+- **Mechanism:** local endpoints run no validator and download no chain. They act as light
+  clients by querying a Solana devnet RPC endpoint (`getAccountInfo` / `getProgramAccounts`)
+  at `confirmed` or `finalized` commitment. Trusting a finalized-commitment RPC response is
+  the standard Solana light-client trust model — it mitigates blockchain data bloat on the
+  user's PC the same way a custom Merkle-path scheme would have, without building one.
 
 ### Ledger 2 — The Threat Registry (Scout Database)
 
 - **Role:** the collective memory tracking what malware looks like across the world.
-- **Data:** `Threat_ID` (cryptographic hash of the behavioral vector); `Behavioral_Schema`
-  (the specific sequence of syscalls and network ports flagged in Stage 1);
-  `Confidence_Score` (an integer counting how many independent Scouts globally have seen
-  this trajectory).
-- **Mechanism:** when a Scout on Machine A logs a new vector, it appends to this ledger.
-  When Machine B's Scout sees a matching trajectory, the ledger correlates them, increments
-  the confidence score, and triggers a network-wide mobilization command once the threshold
-  is crossed.
+- **Data:** an Anchor **program account (PDA)** keyed by `Threat_ID` (cryptographic hash of
+  the behavioral vector), holding `Behavioral_Schema` (the specific sequence of syscalls and
+  network ports flagged in Stage 1) and `Confidence_Score` (an integer counting how many
+  independent Scouts globally have seen this trajectory).
+- **Mechanism:** when a Scout on Machine A logs a new vector, its endpoint signs and submits
+  a `submit_threat` instruction with its own devnet keypair, creating the PDA if new. When
+  Machine B's Scout sees a matching trajectory, its `submit_threat` call increments
+  `Confidence_Score` on the same PDA. Endpoints subscribe to (or poll) the account and
+  trigger a network-wide mobilization command once the threshold is crossed.
 
 ### Ledger 3 — The Genome Registry (Soldier Instructions)
 
 - **Role:** the global pharmacy containing the cryptographic cures.
-- **Data:** mapping `Threat_ID → Wasm_Gene_Hash`; `IPFS_URI` (the distributed file system
-  address where the compiled, sandboxed Wasm exploit binary actually sits);
-  `Epigenetic_Status` (a binary flag: 0 = active expression, 1 = suppressed).
+- **Data:** an Anchor program account (PDA) mapping `Threat_ID → Wasm_Gene_Hash`;
+  `IPFS_CID` (the real, content-addressed location on a public IPFS pinning service where
+  the compiled, sandboxed Wasm exploit binary actually sits); `Epigenetic_Status` (a binary
+  flag: 0 = active expression, 1 = suppressed).
 - **Mechanism:** Soldier agents never scan this registry passively. When a local Scout
   alerts a Soldier to a specific `Threat_ID` matching Ledger 2, the Soldier queries Ledger 3
-  for that specific row. It verifies the `Wasm_Gene_Hash` against the State Ledger's Merkle
-  root, downloads the featherweight bytecode from IPFS, runs it to kill the virus, and then
-  undergoes apoptosis.
+  for that specific PDA via RPC. Reading a finalized account already carries Solana's
+  integrity guarantee, so there's no separate proof step — the Soldier fetches the
+  featherweight bytecode from IPFS by `IPFS_CID`, checks its hash against `Wasm_Gene_Hash`,
+  runs it to kill the virus, and then undergoes apoptosis.
 
 ## Safeguard — Epigenetic Suppression Tokens
 
 If an allergy slips past Stage 3 and starts breaking a legitimate program in the wild,
-consensus nodes do **not** hard-fork the blockchain. They broadcast an **Epigenetic
-Suppressor Token** to Ledger 3, updating the `Epigenetic_Status` flag of that specific Gene
-ID to **1**. Local Soldiers reading this table instantly stop executing that cure,
-neutralizing the global allergy in seconds. This path is first-class: it stays fast and
-simple, and a Soldier must check `Epigenetic_Status` *before* fetching or running a gene.
+consensus nodes do **not** hard-fork Solana. The same 3-of-5 Lymph Node multisig authority
+that gates `commit_gene` submits a `suppress_gene` instruction to Ledger 3, updating the
+`Epigenetic_Status` flag of that specific Gene ID to **1**. This is a normal Solana
+transaction, finalized in seconds. Local Soldiers reading this account on their next RPC
+query instantly stop executing that cure, neutralizing the global allergy in seconds. This
+path is first-class: it stays fast and simple, and a Soldier must check `Epigenetic_Status`
+*before* fetching or running a gene.
 
 ---
 
