@@ -167,6 +167,12 @@ impl GenomeRegistry {
     pub fn apply_suppressor(&mut self, token: &SuppressorToken) {
         self.suppress(&token.threat_id);
     }
+
+    /// Every row's `Wasm_Gene_Hash`, as raw leaves for the genome Merkle tree
+    /// (see [`crate::ledger::client::MockConjugationLink::commit_block`]).
+    pub fn gene_hashes(&self) -> Vec<[u8; 32]> {
+        self.entries.values().map(|entry| entry.gene_hash.0).collect()
+    }
 }
 
 fn to_hex(bytes: &[u8]) -> String {
