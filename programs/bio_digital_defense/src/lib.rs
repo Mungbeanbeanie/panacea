@@ -42,4 +42,10 @@ pub mod bio_digital_defense {
     ) -> Result<()> {
         crate::instructions::commit_gene::handle_commit_gene(ctx, threat_id, gene_hash, ipfs_cid)
     }
+
+    /// Epigenetic Suppressor Token: flips `Epigenetic_Status` to 1 on an existing Genome
+    /// Registry PDA, gated by the same 3-of-5 Lymph Node multisig as `commit_gene`.
+    pub fn suppress_gene(ctx: Context<SuppressGene>, threat_id: [u8; 32]) -> Result<()> {
+        crate::instructions::suppress_gene::handle_suppress_gene(ctx, threat_id)
+    }
 }

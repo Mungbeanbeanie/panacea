@@ -186,8 +186,8 @@ left in place with real Solana devnet integration.
       `Confidence_Score`
 - [x] `commit_gene` instruction: 3-of-5 multisig-gated write to a Genome Registry PDA — this
       is Proof of Immunity
-- [ ] `suppress_gene` instruction: same multisig authority flips `Epigenetic_Status` to 1
-- [ ] Deploy the program to Solana devnet; record the program ID in `Anchor.toml`
+- [x] `suppress_gene` instruction: same multisig authority flips `Epigenetic_Status` to 1
+- [x] Deploy the program to Solana devnet; record the program ID in `Anchor.toml`
 - [ ] Rust core: replace `ledger/client.rs`'s mock transport with `solana-client`/
       `solana-sdk` RPC calls
 - [ ] Rust core: `ledger/state.rs` becomes commitment-level account reads (drop the custom

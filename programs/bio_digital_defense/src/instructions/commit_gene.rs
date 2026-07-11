@@ -34,7 +34,8 @@ pub struct CommitGene<'info> {
 /// Publishes a cure for `threat_id`, gated by a 3-of-5 Lymph Node multisig (Proof of
 /// Immunity) — the on-chain replacement for `consensus::run_poi_consensus()` +
 /// `consensus::commit_gene()` + `GenomeRegistry::publish()` combined. Starts `Active`
-/// (`epigenetic_status = 0`); flipping to `1` is `suppress_gene`, a later slice.
+/// (`epigenetic_status = 0`); flipping to `1` is `suppress_gene`. Refuses to overwrite an
+/// already-suppressed entry back to `Active`.
 pub fn handle_commit_gene(
     ctx: Context<CommitGene>,
     threat_id: [u8; 32],
@@ -65,6 +66,12 @@ pub fn handle_commit_gene(
     require!(signed_count >= POI_QUORUM, ErrorCode::InsufficientQuorum);
 
     let entry = &mut ctx.accounts.genome_entry;
+
+    // The Source of Truth has no reactivation path once a gene is suppressed, so a fresh
+    // commit_gene must not silently undo it (init_if_needed would otherwise happily
+    // overwrite epigenetic_status back to Active).
+    require!(entry.epigenetic_status != 1, ErrorCode::GeneSuppressed);
+
     entry.threat_id = threat_id;
     entry.gene_hash = gene_hash;
     entry.ipfs_cid = ipfs_cid;
