@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panacea — Bio-Digital Defense</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #1c1c1f; }
+    body { font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #c5b3e6; text-decoration: none; }
+    a:hover { color: #ddd0f2; }
+    @view-transition { navigation: auto; }
+    ::view-transition-old(root) { animation: 220ms ease-out both pan-fade-out; }
+    ::view-transition-new(root) { animation: 260ms ease-in both pan-fade-in; }
+    @keyframes pan-fade-out { to { opacity: 0; } }
+    @keyframes pan-fade-in { from { opacity: 0; } }
+    @keyframes pan-page-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    x-dc > div { animation: 320ms ease-out both pan-page-enter; }
+    ::selection { background: rgba(197,179,230,0.35); }
+  </style>
+</helmet>
+
+<div style="min-width: 320px; background: #1c1c1f; color: #f2f1f4; overflow: hidden">
+
+  <!-- NAV -->
+  <nav style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 48px; position: relative; z-index: 3">
+    <div style="display: flex; align-items: baseline; gap: 14px">
+      <div style="font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: 0.5px">Panacea</div>
+      <div style="font-size: 12px; color: #8f8c96; letter-spacing: 0.4px; text-transform: uppercase">Bio-Digital Defense</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 28px">
+      <a href="#agents" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Agents</a>
+      <a href="#engine" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Evolution Engine</a>
+      <a href="#ledger" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Ledger</a>
+      <sc-if value="{{ signedIn }}" hint-placeholder-val="{{ false }}">
+        <a href="Dashboard.dc.html" style="font-size: 14px; font-weight: 600; color: #17240d; background: #78be43; padding: 10px 18px; border-radius: 8px; margin-left: 12px" style-hover="background: #8ecf5b; color: #17240d">Dashboard</a>
+      </sc-if>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <header style="position: relative; min-height: 620px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 40px 24px 80px">
+    <div style="position: absolute; inset: 0; z-index: 1">{{ heroCanvas }}</div>
+    <div style="position: absolute; inset: 0; z-index: 2; background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(28,28,31,0.55) 0%, rgba(28,28,31,0) 70%); pointer-events: none"></div>
+    <div style="position: relative; z-index: 3; max-width: 820px; display: flex; flex-direction: column; align-items: center; gap: 26px">
+      <div style="font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; color: #a9e07f; font-weight: 600; display: flex; align-items: center; gap: 10px">
+        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #78be43">{{ pulseDot }}</span>
+        Immune system online
+      </div>
+      <h1 style="font-family: 'Chakra Petch', sans-serif; font-size: 96px; line-height: 1; font-weight: 700; margin: 0; letter-spacing: -1px">Panacea</h1>
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 30px; line-height: 1.2; font-weight: 500; color: #c5b3e6">Your machine grows an immune system.</div>
+      <p style="font-size: 18px; line-height: 1.6; color: #b9b6c1; margin: 0; max-width: 620px; text-wrap: pretty">Panacea replaces static signature patching with an autonomous, decentralized swarm of agents modeled on biological immunology — hunting zero-days in real time across every host on the network.</p>
+      <div style="display: flex; gap: 14px; margin-top: 6px">
+        <sc-if value="{{ signedOut }}" hint-placeholder-val="{{ true }}">
+          <a href="Log In.dc.html" style="font-size: 16px; font-weight: 600; color: #f2f1f4; padding: 13px 28px; border: 1px solid #3b3a40; border-radius: 10px" style-hover="border-color: #c5b3e6; color: #ffffff">Log in</a>
+          <a href="Create Account.dc.html" style="font-size: 16px; font-weight: 600; color: #17240d; background: #78be43; padding: 14px 30px; border-radius: 10px" style-hover="background: #8ecf5b; color: #17240d">Create account</a>
+        </sc-if>
+        <sc-if value="{{ signedIn }}" hint-placeholder-val="{{ false }}">
+          <a href="Dashboard.dc.html" style="font-size: 16px; font-weight: 600; color: #17240d; background: #78be43; padding: 14px 30px; border-radius: 10px" style-hover="background: #8ecf5b; color: #17240d">Open dashboard</a>
+          <button onClick="{{ logOut }}" style="font-size: 16px; font-weight: 600; color: #f2f1f4; background: none; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; padding: 13px 28px; border: 1px solid #3b3a40; border-radius: 10px" style-hover="border-color: #c5b3e6">Log out</button>
+        </sc-if>
+      </div>
+    </div>
+  </header>
+
+  <!-- LIVE COUNTERS -->
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #2c2b31; border-top: 1px solid #2c2b31; border-bottom: 1px solid #2c2b31; position: relative; z-index: 3">
+    <div style="background: #1c1c1f; padding: 32px 24px; text-align: center; display: flex; flex-direction: column; gap: 6px">
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 40px; font-weight: 700; color: #f2f1f4; font-variant-numeric: tabular-nums">{{ threatsCount }}</div>
+      <div style="font-size: 13px; color: #c5b3e6; letter-spacing: 1px; text-transform: uppercase">Threats neutralized</div>
+    </div>
+    <div style="background: #1c1c1f; padding: 32px 24px; text-align: center; display: flex; flex-direction: column; gap: 6px">
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 40px; font-weight: 700; color: #f2f1f4; font-variant-numeric: tabular-nums">{{ nodesCount }}</div>
+      <div style="font-size: 13px; color: #c5b3e6; letter-spacing: 1px; text-transform: uppercase">Validator nodes</div>
+    </div>
+    <div style="background: #1c1c1f; padding: 32px 24px; text-align: center; display: flex; flex-direction: column; gap: 6px">
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 40px; font-weight: 700; color: #f2f1f4; font-variant-numeric: tabular-nums">{{ overheadStat }}</div>
+      <div style="font-size: 13px; color: #c5b3e6; letter-spacing: 1px; text-transform: uppercase">Idle RAM footprint</div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: AGENTS -->
+  <section id="agents" data-screen-label="Agents" style="max-width: 1080px; margin: 0 auto; padding: 110px 32px 90px; display: flex; flex-direction: column; gap: 48px">
+    <div style="display: flex; flex-direction: column; gap: 14px; max-width: 640px">
+      <div style="font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; color: #c5b3e6; font-weight: 600">01 — The Agent Caste System</div>
+      <h2 style="font-family: 'Chakra Petch', sans-serif; font-size: 38px; font-weight: 700; margin: 0; line-height: 1.15">Two castes. One immune response.</h2>
+      <p style="font-size: 16px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">Like white blood cells, Panacea's agents specialize. Sensing is cheap and constant; killing is heavy and rare.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px">
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 34px; display: flex; flex-direction: column; gap: 14px; transition: border-color 0.2s" style-hover="border-color: #78be43">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #78be43; display: inline-block"></span>
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 22px; font-weight: 600">Scout Agents</div>
+          <div style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #8f8c96; margin-left: auto">Sensors</div>
+        </div>
+        <p style="font-size: 15px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">Ultra-lightweight daemons that never kill — they watch. Scouts trace low-level behavioral trajectories: syscall anomalies, memory-boundary violations, suspicious I/O bursts — and report signatures to the swarm.</p>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 34px; display: flex; flex-direction: column; gap: 14px; transition: border-color 0.2s" style-hover="border-color: #c5b3e6">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #c5b3e6; display: inline-block"></span>
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 22px; font-weight: 600">Soldier Agents</div>
+          <div style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #8f8c96; margin-left: auto">Executioners</div>
+        </div>
+        <p style="font-size: 15px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">Heavy payloads that sleep as un-executed disk spores, costing you nothing. Summoned by a high-confidence alert, a Soldier isolates the threat, evolves a kill, executes it — then undergoes apoptosis back into a spore.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2: EVOLUTION ENGINE -->
+  <section id="engine" data-screen-label="Evolution Engine" style="border-top: 1px solid #2c2b31; background: #201f24">
+    <div style="max-width: 1080px; margin: 0 auto; padding: 110px 32px 90px; display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center">
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <div style="font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; color: #c5b3e6; font-weight: 600">02 — The Local Evolution Engine</div>
+        <h2 style="font-family: 'Chakra Petch', sans-serif; font-size: 38px; font-weight: 700; margin: 0; line-height: 1.15">It doesn't guess.<br>It evolves the kill.</h2>
+        <p style="font-size: 16px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">A waking Soldier clones the target process into an isolated MicroVM sandbox, then runs an automated fuzzing matrix of pre-compiled structural alleles until it finds the exact lock-and-key combination that forces a clean crash — without ever destabilizing your host OS.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: center; gap: 16px; background: #262529; border: 1px solid #302f35; border-radius: 12px; padding: 18px 22px" style-hover="border-color: #c5b3e6">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 14px; font-weight: 600; color: #c5b3e6; min-width: 24px">A1</div>
+          <div style="font-size: 14px; color: #d6d3dd">Targeted thread exit-tokens</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; background: #262529; border: 1px solid #302f35; border-radius: 12px; padding: 18px 22px" style-hover="border-color: #c5b3e6">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 14px; font-weight: 600; color: #c5b3e6; min-width: 24px">A2</div>
+          <div style="font-size: 14px; color: #d6d3dd">Physical resource starvation</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; background: #262529; border: 1px solid #302f35; border-radius: 12px; padding: 18px 22px" style-hover="border-color: #c5b3e6">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 14px; font-weight: 600; color: #c5b3e6; min-width: 24px">A3</div>
+          <div style="font-size: 14px; color: #d6d3dd">Memory-buffer flooding</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; background: rgba(120,190,67,0.08); border: 1px solid rgba(120,190,67,0.45); border-radius: 12px; padding: 18px 22px">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 14px; font-weight: 700; color: #a9e07f; min-width: 24px">✓</div>
+          <div style="font-size: 14px; color: #d9f0c7; font-weight: 500">Lock-and-key match — clean crash confirmed</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 3: LEDGER -->
+  <section id="ledger" data-screen-label="Ledger" style="max-width: 1080px; margin: 0 auto; padding: 110px 32px 100px; display: flex; flex-direction: column; gap: 48px">
+    <div style="display: flex; flex-direction: column; gap: 14px; max-width: 680px">
+      <div style="font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; color: #c5b3e6; font-weight: 600">03 — The 3-Ledger Architecture</div>
+      <h2 style="font-family: 'Chakra Petch', sans-serif; font-size: 38px; font-weight: 700; margin: 0; line-height: 1.15">Crowd-sourced immunity, secured by Proof of Immunity.</h2>
+      <p style="font-size: 16px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">Validators must prove target-isolation metrics to write blocks. One infection observed anywhere becomes immunity everywhere.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px">
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 30px; display: flex; flex-direction: column; gap: 12px" style-hover="border-color: #c5b3e6">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 13px; color: #8f8c96; letter-spacing: 1px">LEDGER 1</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 20px; font-weight: 600">State Ledger</div>
+        <p style="font-size: 14px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">The cryptographic core — block headers and Merkle roots that make the system's history tamper-proof.</p>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 30px; display: flex; flex-direction: column; gap: 12px" style-hover="border-color: #c5b3e6">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 13px; color: #8f8c96; letter-spacing: 1px">LEDGER 2</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 20px; font-weight: 600">Threat Registry</div>
+        <p style="font-size: 14px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">Real-time behavioral signatures from Scouts. Identical cross-host matches escalate confidence and deploy Soldiers globally against zero-days.</p>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 30px; display: flex; flex-direction: column; gap: 12px" style-hover="border-color: #c5b3e6">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 13px; color: #8f8c96; letter-spacing: 1px">LEDGER 3</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 20px; font-weight: 600">Genome Registry</div>
+        <p style="font-size: 14px; line-height: 1.65; color: #b9b6c1; margin: 0; text-wrap: pretty">Confirmed threat IDs mapped to cryptographic hashes of verified Wasm kill-modules, stored on IPFS.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA FOOTER -->
+  <footer id="signup" data-screen-label="CTA Footer" style="border-top: 1px solid #2c2b31; background: #201f24">
+    <div style="max-width: 1080px; margin: 0 auto; padding: 90px 32px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px">
+      <h2 style="font-family: 'Chakra Petch', sans-serif; font-size: 40px; font-weight: 700; margin: 0; line-height: 1.15">Join the herd immunity.</h2>
+      <p style="font-size: 16px; line-height: 1.6; color: #b9b6c1; margin: 0; max-width: 520px; text-wrap: pretty">Every host that runs Panacea makes every other host harder to infect.</p>
+      <div style="display: flex; gap: 14px; margin-top: 8px">
+        <sc-if value="{{ signedOut }}" hint-placeholder-val="{{ true }}">
+          <a href="Create Account.dc.html" style="font-size: 16px; font-weight: 600; color: #17240d; background: #78be43; padding: 14px 30px; border-radius: 10px" style-hover="background: #8ecf5b; color: #17240d">Create account</a>
+          <a href="Log In.dc.html" style="font-size: 16px; font-weight: 600; color: #f2f1f4; padding: 13px 28px; border: 1px solid #3b3a40; border-radius: 10px" style-hover="border-color: #c5b3e6; color: #ffffff">Log in</a>
+        </sc-if>
+        <sc-if value="{{ signedIn }}" hint-placeholder-val="{{ false }}">
+          <a href="Dashboard.dc.html" style="font-size: 16px; font-weight: 600; color: #17240d; background: #78be43; padding: 14px 30px; border-radius: 10px" style-hover="background: #8ecf5b; color: #17240d">Open dashboard</a>
+        </sc-if>
+      </div>
+      <div style="font-size: 12px; color: #8f8c96; margin-top: 34px">Panacea — an autonomous, decentralized, zero-trust anti-virus ecosystem.</div>
+    </div>
+  </footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showCounters&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Behavior&quot;}}">
+class Component extends DCLogic {
+  state = { threats: 1842907, nodes: 12408 };
+
+  componentDidMount() {
+    this.canvasRef = React.createRef ? this.canvasRef : null;
+    this.tick = setInterval(() => {
+      this.setState(s => ({
+        threats: s.threats + Math.floor(Math.random() * 4),
+        nodes: Math.random() < 0.25 ? s.nodes + 1 : s.nodes
+      }));
+    }, 1400);
+    this.startSim();
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.tick);
+    cancelAnimationFrame(this.raf);
+  }
+
+  startSim() {
+    const canvas = this._canvas;
+    if (!canvas) { setTimeout(() => this.startSim(), 100); return; }
+    const ctx = canvas.getContext('2d');
+    const parent = canvas.parentElement;
+    let W, H, dpr;
+    const resize = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = parent.clientWidth; H = parent.clientHeight;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Scouts: small green wanderers. Pathogens: red, appear occasionally.
+    // Soldiers: lavender, spawn near pathogen, converge, kill, fade.
+    const scouts = [];
+    const N = 46;
+    for (let i = 0; i < N; i++) {
+      scouts.push({
+        x: Math.random() * 1600, y: Math.random() * 700,
+        a: Math.random() * Math.PI * 2,
+        s: 0.25 + Math.random() * 0.35,
+        r: 1.4 + Math.random() * 1.2
+      });
+    }
+    let pathogen = null, soldiers = [], nextSpawn = 90;
+
+    const loop = () => {
+      ctx.clearRect(0, 0, W, H);
+
+      // link nearby scouts (mesh)
+      ctx.lineWidth = 1;
+      for (let i = 0; i < N; i++) {
+        const p = scouts[i];
+        for (let j = i + 1; j < N; j++) {
+          const q = scouts[j];
+          const dx = p.x - q.x, dy = p.y - q.y, d2 = dx * dx + dy * dy;
+          if (d2 < 120 * 120) {
+            const o = 0.10 * (1 - Math.sqrt(d2) / 120);
+            ctx.strokeStyle = 'rgba(197,179,230,' + o.toFixed(3) + ')';
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+          }
+        }
+      }
+
+      // scouts
+      for (const p of scouts) {
+        p.a += (Math.random() - 0.5) * 0.15;
+        p.x += Math.cos(p.a) * p.s; p.y += Math.sin(p.a) * p.s;
+        if (p.x < -10) p.x = W + 10; if (p.x > W + 10) p.x = -10;
+        if (p.y < -10) p.y = H + 10; if (p.y > H + 10) p.y = -10;
+        ctx.fillStyle = 'rgba(120,190,67,0.75)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // pathogen lifecycle
+      if (!pathogen) {
+        if (--nextSpawn <= 0) {
+          pathogen = {
+            x: W * (0.2 + Math.random() * 0.6),
+            y: H * (0.2 + Math.random() * 0.6),
+            r: 0, life: 0, dying: 0
+          };
+          soldiers = [];
+          for (let k = 0; k < 4; k++) {
+            const ang = Math.random() * Math.PI * 2, dist = 180 + Math.random() * 120;
+            soldiers.push({ x: pathogen.x + Math.cos(ang) * dist, y: pathogen.y + Math.sin(ang) * dist, arrived: false });
+          }
+        }
+      } else {
+        pathogen.life++;
+        if (!pathogen.dying) pathogen.r = Math.min(9, pathogen.r + 0.15);
+        // pulse ring
+        const pulse = (pathogen.life % 70) / 70;
+        ctx.strokeStyle = 'rgba(224,90,90,' + (0.5 * (1 - pulse)).toFixed(3) + ')';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(pathogen.x, pathogen.y, pathogen.r + pulse * 34, 0, Math.PI * 2); ctx.stroke();
+        // body
+        ctx.fillStyle = pathogen.dying ? 'rgba(224,90,90,' + Math.max(0, 1 - pathogen.dying / 40).toFixed(3) + ')' : 'rgba(224,90,90,0.9)';
+        ctx.beginPath(); ctx.arc(pathogen.x, pathogen.y, Math.max(0, pathogen.r * (pathogen.dying ? 1 - pathogen.dying / 40 : 1)), 0, Math.PI * 2); ctx.fill();
+
+        // soldiers converge after a delay
+        let allArrived = true;
+        if (pathogen.life > 80) {
+          for (const s of soldiers) {
+            const dx = pathogen.x - s.x, dy = pathogen.y - s.y;
+            const d = Math.hypot(dx, dy);
+            if (d > 16) { s.x += dx / d * 1.6; s.y += dy / d * 1.6; allArrived = false; }
+            else s.arrived = true;
+            const fade = pathogen.dying ? Math.max(0, 1 - pathogen.dying / 40) : 1;
+            ctx.fillStyle = 'rgba(197,179,230,' + (0.9 * fade).toFixed(3) + ')';
+            ctx.beginPath(); ctx.arc(s.x, s.y, 3.2, 0, Math.PI * 2); ctx.fill();
+            // tether to pathogen when close
+            if (d < 60) {
+              ctx.strokeStyle = 'rgba(197,179,230,' + (0.35 * fade).toFixed(3) + ')';
+              ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(pathogen.x, pathogen.y); ctx.stroke();
+            }
+          }
+        } else allArrived = false;
+
+        if (allArrived && soldiers.every(s => s.arrived) && !pathogen.dying) pathogen.dying = 1;
+        if (pathogen.dying) {
+          pathogen.dying++;
+          if (pathogen.dying > 45) { pathogen = null; nextSpawn = 200 + Math.random() * 260; }
+        }
+      }
+
+      this.raf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  renderVals() {
+    const accent = this.props.accentColor ?? '#78be43';
+    if (!this._heroCanvas) {
+      this._heroCanvas = React.createElement('canvas', {
+        ref: (el) => { this._canvas = el; },
+        style: { position: 'absolute', inset: 0, width: '100%', height: '100%' }
+      });
+    }
+    if (!this._pulseDot) {
+      this._pulseDot = React.createElement('span', {
+        style: { position: 'absolute', display: 'block', width: '8px', height: '8px', borderRadius: '50%', background: accent, animation: 'none' }
+      });
+    }
+    const showCounters = this.props.showCounters ?? true;
+    return {
+      signedIn: localStorage.getItem('panacea_signed_in') === '1',
+      userName: localStorage.getItem('panacea_user_name') || 'agent',
+      signedOut: localStorage.getItem('panacea_signed_in') !== '1',
+      logOut: () => {
+        localStorage.setItem('panacea_signed_in', '0');
+        this.forceUpdate();
+      },
+      heroCanvas: this._heroCanvas,
+      pulseDot: null,
+      threatsCount: showCounters ? this.state.threats.toLocaleString() : '1,842,907',
+      nodesCount: showCounters ? this.state.nodes.toLocaleString() : '12,408',
+      overheadStat: '8.2 MB'
+    };
+  }
+}
+</script>
+</body>
+</html>

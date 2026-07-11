@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create account — Panacea</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #1c1c1f; }
+    body { font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #c5b3e6; text-decoration: none; }
+    a:hover { color: #ddd0f2; }
+    input::placeholder { color: #6f6c78; }
+    @view-transition { navigation: auto; }
+    ::view-transition-old(root) { animation: 220ms ease-out both pan-fade-out; }
+    ::view-transition-new(root) { animation: 260ms ease-in both pan-fade-in; }
+    @keyframes pan-fade-out { to { opacity: 0; } }
+    @keyframes pan-fade-in { from { opacity: 0; } }
+    @keyframes pan-page-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    x-dc > div { animation: 320ms ease-out both pan-page-enter; }
+    ::selection { background: rgba(197,179,230,0.35); }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; background: #1c1c1f; color: #f2f1f4; display: flex; flex-direction: column">
+
+  <!-- NAV -->
+  <nav style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 48px">
+    <a href="Panacea Landing.dc.html" style="display: flex; align-items: baseline; gap: 14px; color: #f2f1f4" style-hover="color: #ffffff">
+      <span style="font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: 0.5px">Panacea</span>
+      <span style="font-size: 12px; color: #8f8c96; letter-spacing: 0.4px; text-transform: uppercase">Bio-Digital Defense</span>
+    </a>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: #8f8c96">
+      Already have an account?
+      <a href="Log In.dc.html" style="font-size: 14px; font-weight: 600; color: #f2f1f4; padding: 9px 18px; border: 1px solid #3b3a40; border-radius: 8px" style-hover="border-color: #c5b3e6; color: #ffffff">Log in</a>
+    </div>
+  </nav>
+
+  <!-- BODY -->
+  <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; max-width: 1180px; width: 100%; margin: 0 auto; gap: 64px; padding: 40px 48px 80px; box-sizing: border-box">
+
+    <!-- LEFT: pitch -->
+    <div style="display: flex; flex-direction: column; justify-content: center; gap: 28px">
+      <h1 style="font-family: 'Chakra Petch', sans-serif; font-size: 44px; font-weight: 700; margin: 0; line-height: 1.1">Enroll this machine<br>in the immune network.</h1>
+      <p style="font-size: 16px; line-height: 1.65; color: #b9b6c1; margin: 0; max-width: 440px; text-wrap: pretty">One account covers all your hosts. The moment you join, your Scouts start contributing behavioral signatures — and you inherit immunity from every threat the network has ever killed.</p>
+      <div style="display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; align-items: center; gap: 14px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #78be43; display: inline-block; flex-shrink: 0"></span>
+          <span style="font-size: 14px; color: #d6d3dd">Scouts deploy in under a minute — 8.2 MB idle footprint</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #c5b3e6; display: inline-block; flex-shrink: 0"></span>
+          <span style="font-size: 14px; color: #d6d3dd">Soldiers stay dormant as spores until a threat is confirmed</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #78be43; display: inline-block; flex-shrink: 0"></span>
+          <span style="font-size: 14px; color: #d6d3dd">Zero-trust: your data never leaves the host, only signatures do</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: form -->
+    <div style="display: flex; align-items: center">
+      <sc-if value="{{ notSubmitted }}" hint-placeholder-val="{{ true }}">
+        <form style="width: 100%; background: #232227; border: 1px solid #2f2e34; border-radius: 16px; padding: 40px; display: flex; flex-direction: column; gap: 20px; box-sizing: border-box" onSubmit="{{ handleSubmit }}">
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px">
+            <div style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700">Create your account</div>
+            <div style="font-size: 14px; color: #8f8c96">Free while Panacea is in open beta.</div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <label for="name" style="font-size: 13px; font-weight: 600; color: #c9c6d0">Full name</label>
+            <input id="name" type="text" placeholder="John Doe" value="{{ name }}" onChange="{{ setName }}" style="background: #1c1c1f; border: 1px solid #3b3a40; border-radius: 10px; padding: 13px 16px; font-size: 15px; color: #f2f1f4; font-family: 'IBM Plex Sans', sans-serif; outline: none; width: 100%; box-sizing: border-box" style-focus="border-color: #c5b3e6">
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <label for="email" style="font-size: 13px; font-weight: 600; color: #c9c6d0">Email</label>
+            <input id="email" type="email" placeholder="you@example.com" value="{{ email }}" onChange="{{ setEmail }}" style="background: #1c1c1f; border: 1px solid #3b3a40; border-radius: 10px; padding: 13px 16px; font-size: 15px; color: #f2f1f4; font-family: 'IBM Plex Sans', sans-serif; outline: none; width: 100%; box-sizing: border-box" style-focus="border-color: #c5b3e6">
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <label for="password" style="font-size: 13px; font-weight: 600; color: #c9c6d0">Password</label>
+            <input id="password" type="password" placeholder="At least 8 characters" value="{{ password }}" onChange="{{ setPassword }}" style="background: #1c1c1f; border: 1px solid #3b3a40; border-radius: 10px; padding: 13px 16px; font-size: 15px; color: #f2f1f4; font-family: 'IBM Plex Sans', sans-serif; outline: none; width: 100%; box-sizing: border-box" style-focus="border-color: #c5b3e6">
+            <div style="display: flex; gap: 6px; margin-top: 2px">
+              <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ bar1 }}"></div>
+              <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ bar2 }}"></div>
+              <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ bar3 }}"></div>
+            </div>
+            <div style="font-size: 12px; color: #8f8c96">{{ strengthLabel }}</div>
+          </div>
+
+          <sc-if value="{{ errorMsg }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size: 13px; color: #e08a8a; background: rgba(224,90,90,0.08); border: 1px solid rgba(224,90,90,0.35); border-radius: 10px; padding: 12px 16px">{{ errorMsg }}</div>
+          </sc-if>
+
+          <button type="submit" style="font-size: 16px; font-weight: 600; color: #17240d; background: #78be43; padding: 15px 30px; border-radius: 10px; border: none; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; margin-top: 4px" style-hover="background: #8ecf5b">Create account</button>
+
+          <div style="font-size: 12px; color: #8f8c96; line-height: 1.6; text-align: center">By creating an account you agree to the <a href="#terms">Terms</a> and <a href="#privacy">Privacy Policy</a>.</div>
+        </form>
+      </sc-if>
+
+      <sc-if value="{{ submitted }}" hint-placeholder-val="{{ false }}">
+        <div style="width: 100%; background: #232227; border: 1px solid rgba(120,190,67,0.45); border-radius: 16px; padding: 48px 40px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; box-sizing: border-box">
+          <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(120,190,67,0.12); border: 1px solid rgba(120,190,67,0.5); display: flex; align-items: center; justify-content: center; font-size: 26px; color: #a9e07f">✓</div>
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700">Welcome, {{ firstName }}.</div>
+          <p style="font-size: 15px; line-height: 1.65; color: #b9b6c1; margin: 0; max-width: 360px; text-wrap: pretty">Your account is ready. We've sent a confirmation link to <span style="color: #c5b3e6">{{ email }}</span> — verify it to enroll your first host.</p>
+          <a href="Panacea Landing.dc.html" style="font-size: 15px; font-weight: 600; color: #f2f1f4; padding: 12px 26px; border: 1px solid #3b3a40; border-radius: 10px; margin-top: 6px" style-hover="border-color: #c5b3e6; color: #ffffff">Back to home</a>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { name: '', email: '', password: '', submitted: false, error: '' };
+
+  strength() {
+    const p = this.state.password;
+    if (!p) return 0;
+    let s = 0;
+    if (p.length >= 8) s++;
+    if (/[A-Z]/.test(p) && /[0-9]/.test(p)) s++;
+    if (p.length >= 12 && /[^A-Za-z0-9]/.test(p)) s++;
+    return Math.max(1, s);
+  }
+
+  renderVals() {
+    const dim = '#3b3a40';
+    const cols = ['', '#e08a5a', '#d9c85a', '#78be43'];
+    const labels = ['Password strength', 'Weak — try 8+ characters', 'Good — add a symbol for best strength', 'Strong'];
+    const st = this.strength();
+    return {
+      name: this.state.name,
+      email: this.state.email,
+      password: this.state.password,
+      firstName: (this.state.name.trim().split(' ')[0]) || 'agent',
+      submitted: this.state.submitted,
+      notSubmitted: !this.state.submitted,
+      errorMsg: this.state.error,
+      bar1: st >= 1 ? cols[st] : dim,
+      bar2: st >= 2 ? cols[st] : dim,
+      bar3: st >= 3 ? cols[st] : dim,
+      strengthLabel: labels[st],
+      setName: (e) => this.setState({ name: e.target.value, error: '' }),
+      setEmail: (e) => this.setState({ email: e.target.value, error: '' }),
+      setPassword: (e) => this.setState({ password: e.target.value, error: '' }),
+      handleSubmit: (e) => {
+        e.preventDefault();
+        const { name, email, password } = this.state;
+        if (!name.trim()) return this.setState({ error: 'Please enter your name.' });
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return this.setState({ error: 'Please enter a valid email address.' });
+        if (password.length < 8) return this.setState({ error: 'Password must be at least 8 characters.' });
+        localStorage.setItem('panacea_signed_in', '1');
+        localStorage.setItem('panacea_user_name', name.trim());
+        localStorage.setItem('panacea_user_email', email.trim());
+        this.setState({ submitted: true });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

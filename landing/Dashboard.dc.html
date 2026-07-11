@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Panacea</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #1c1c1f; }
+    body { font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #c5b3e6; text-decoration: none; }
+    a:hover { color: #ddd0f2; }
+    @view-transition { navigation: auto; }
+    ::view-transition-old(root) { animation: 220ms ease-out both pan-fade-out; }
+    ::view-transition-new(root) { animation: 260ms ease-in both pan-fade-in; }
+    @keyframes pan-fade-out { to { opacity: 0; } }
+    @keyframes pan-fade-in { from { opacity: 0; } }
+    @keyframes pan-page-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    x-dc > div { animation: 320ms ease-out both pan-page-enter; }
+    ::selection { background: rgba(197,179,230,0.35); }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; background: #1c1c1f; color: #f2f1f4; display: flex; flex-direction: column">
+
+  <!-- NAV -->
+  <nav style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 48px; border-bottom: 1px solid #2c2b31">
+    <a href="Panacea Landing.dc.html" style="display: flex; flex-direction: column; gap: 2px; color: #f2f1f4" style-hover="color: #ffffff">
+      <span style="font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: 0.5px">Panacea</span>
+      <span style="font-size: 12px; color: #8f8c96">Welcome, {{ userName }}.</span>
+    </a>
+    <div style="display: flex; align-items: center; gap: 28px">
+      <a href="Panacea Landing.dc.html" style="font-size: 14px; font-weight: 600; color: #ffffff">Home</a>
+      <a href="Account.dc.html" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Account</a>
+      <a href="Protection.dc.html" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Protection</a>
+      <button onClick="{{ togglePower }}" title="Toggle protection" style="width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer; background: {{ powerBg }}; color: #17240d; display: flex; align-items: center; justify-content: center; margin-left: 8px; transition: background 0.25s, box-shadow 0.25s; box-shadow: {{ powerGlow }}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v9"></path><path d="M6.2 6.2a8 8 0 1 0 11.6 0"></path></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- STATUS BANNER -->
+  <div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px; background: {{ bannerBg }}; border-bottom: 1px solid #2c2b31; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; color: {{ bannerColor }}">
+    <span style="width: 8px; height: 8px; border-radius: 50%; background: {{ bannerColor }}; display: inline-block"></span>
+    {{ bannerText }}
+  </div>
+
+  <!-- MAIN -->
+  <main data-screen-label="Dashboard" style="max-width: 1180px; width: 100%; margin: 0 auto; padding: 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 40px">
+
+    <!-- SYSTEM STATS -->
+    <section style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px">
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums">{{ ram }} MB</div>
+        <div style="font-size: 14px; color: #c5b3e6; letter-spacing: 1px; text-transform: uppercase">RAM in use</div>
+        <div style="font-size: 12px; color: #8f8c96">Scout daemon footprint</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums">{{ cpu }}%</div>
+        <div style="font-size: 14px; color: #c5b3e6; letter-spacing: 1px; text-transform: uppercase">CPU in use</div>
+        <div style="font-size: 12px; color: #8f8c96">{{ cpuTemp }}°F</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums">{{ gpu }}%</div>
+        <div style="font-size: 14px; color: #c5b3e6; letter-spacing: 1px; text-transform: uppercase">GPU in use</div>
+        <div style="font-size: 12px; color: #8f8c96">{{ gpuTemp }}°F</div>
+      </div>
+    </section>
+
+    <!-- AGENT STATUS + ACTIVITY -->
+    <section style="display: grid; grid-template-columns: 1fr 1.4fr; gap: 24px; align-items: start">
+
+      <div style="display: flex; flex-direction: column; gap: 24px">
+        <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 18px">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Agent status</div>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #78be43; display: inline-block"></span>
+              <span style="font-size: 14px; color: #d6d3dd">Scouts patrolling</span>
+            </div>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums">{{ scouts }}</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #c5b3e6; display: inline-block"></span>
+              <span style="font-size: 14px; color: #d6d3dd">Soldier spores dormant</span>
+            </div>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums">142</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #8f8c96; display: inline-block"></span>
+              <span style="font-size: 14px; color: #d6d3dd">Soldiers active</span>
+            </div>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums">0</span>
+          </div>
+        </div>
+
+        <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 18px">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Network</div>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <span style="font-size: 14px; color: #d6d3dd">Ledger sync</span>
+            <span style="font-size: 13px; color: #a9e07f; font-weight: 600">Block {{ block }}</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <span style="font-size: 14px; color: #d6d3dd">Threat Registry</span>
+            <span style="font-size: 13px; color: #a9e07f; font-weight: 600">Live</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <span style="font-size: 14px; color: #d6d3dd">Genome Registry</span>
+            <span style="font-size: 13px; color: #8f8c96; font-weight: 600">Synced 2 min ago</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Recent activity</div>
+          <a href="#log" style="font-size: 13px">Full log</a>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #1c1c1f; border: 1px solid #2f2e34; border-radius: 10px; padding: 14px 18px; gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums">{{ activeNodes }}</span>
+            <span style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Active nodes</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 2px; text-align: right">
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: #a9e07f">{{ curesPerMin }}</span>
+            <span style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Cures / min network-wide</span>
+          </div>
+        </div>
+        <sc-for list="{{ events }}" as="ev" hint-placeholder-count="5">
+          <div style="display: flex; align-items: baseline; gap: 14px; padding: 13px 0; border-bottom: 1px solid #2c2b31">
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: #8f8c96; min-width: 58px; font-variant-numeric: tabular-nums">{{ ev.time }}</span>
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: {{ ev.color }}; display: inline-block; flex-shrink: 0; position: relative; top: -1px"></span>
+            <span style="font-size: 14px; color: #d6d3dd; line-height: 1.5">{{ ev.text }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <!-- MACHINE STATS -->
+    <section style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px">
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Disk</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums">412 / 1000 GB</div>
+        <div style="height: 4px; border-radius: 2px; background: #2f2e34; margin-top: 6px; overflow: hidden"><div style="width: 41%; height: 100%; background: #c5b3e6"></div></div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Network</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums">↓ {{ netDown }} MB/s</div>
+        <div style="font-size: 12px; color: #8f8c96; font-variant-numeric: tabular-nums">↑ {{ netUp }} MB/s</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Uptime</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums">{{ uptime }}</div>
+        <div style="font-size: 12px; color: #8f8c96">Since last restart</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Battery</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: #a9e07f">{{ battery }}%</div>
+        <div style="font-size: 12px; color: #8f8c96">Plugged in</div>
+      </div>
+    </section>
+
+    <!-- PROCESS GRAPH + IMMUNE LEDGER -->
+    <section style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start">
+
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Running programs</div>
+          <div style="font-size: 12px; color: #8f8c96">{{ scouts }} scouts watching · {{ procCount }} processes</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px; padding: 4px 0 8px; border-bottom: 1px solid #2c2b31; font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">
+          <span style="width: 7px; flex-shrink: 0"></span>
+          <span style="min-width: 90px">Program</span>
+          <span style="min-width: 64px">Scout</span>
+          <span style="min-width: 52px; text-align: right">CPU</span>
+          <span style="min-width: 72px; text-align: right">Memory</span>
+          <span style="margin-left: auto">Status</span>
+        </div>
+        <sc-for list="{{ processes }}" as="proc" hint-placeholder-count="6">
+          <div style="display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #2c2b31">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: {{ proc.color }}; display: inline-block; flex-shrink: 0"></span>
+            <span style="font-size: 14px; color: #f2f1f4; font-weight: 500; min-width: 90px">{{ proc.name }}</span>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: #c5b3e6; min-width: 64px">{{ proc.scout }}</span>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 13px; color: #d6d3dd; min-width: 52px; text-align: right; font-variant-numeric: tabular-nums">{{ proc.cpu }}%</span>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 13px; color: #d6d3dd; min-width: 72px; text-align: right; font-variant-numeric: tabular-nums">{{ proc.mem }}</span>
+            <span style="font-size: 13px; color: #8f8c96; margin-left: auto">{{ proc.status }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Immune ledger</div>
+          <a href="#ledger" style="font-size: 13px">All blocks</a>
+        </div>
+        <sc-for list="{{ blocks }}" as="blk" hint-placeholder-count="2">
+          <div style="background: #1c1c1f; border: 1px solid #2f2e34; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-family: 'Chakra Petch', sans-serif; font-size: 14px; font-weight: 700">BLCK #{{ blk.num }}</span>
+              <span style="font-size: 12px; color: #8f8c96; font-variant-numeric: tabular-nums">{{ blk.ago }}</span>
+            </div>
+            <div style="display: flex; gap: 10px; font-size: 13px">
+              <span style="color: #8f8c96; min-width: 92px">Trajectory</span>
+              <span style="font-family: 'Chakra Petch', sans-serif; color: #d6d3dd">{{ blk.trajectory }}</span>
+            </div>
+            <div style="display: flex; gap: 10px; font-size: 13px">
+              <span style="color: #8f8c96; min-width: 92px">Gene vector</span>
+              <span style="font-family: 'Chakra Petch', sans-serif; color: #c5b3e6">{{ blk.vector }}</span>
+            </div>
+            <div style="display: flex; gap: 10px; font-size: 13px">
+              <span style="color: #8f8c96; min-width: 92px">Status</span>
+              <span style="font-weight: 600; color: {{ blk.statusColor }}">{{ blk.status }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    on: true,
+    ram: 8.2, cpu: 22, gpu: 10, cpuTemp: 105, gpuTemp: 98,
+    scouts: 46, block: 8412907,
+    activeNodes: 41902, curesPerMin: 1208
+  };
+
+  componentDidMount() {
+    this.tick = setInterval(() => {
+      if (!this.state.on) return;
+      this.setState(s => ({
+        ram: Math.max(6, Math.min(11, s.ram + (Math.random() - 0.5) * 0.4)),
+        cpu: Math.max(4, Math.min(38, s.cpu + Math.round((Math.random() - 0.5) * 5))),
+        gpu: Math.max(2, Math.min(24, s.gpu + Math.round((Math.random() - 0.5) * 3))),
+        cpuTemp: Math.max(95, Math.min(115, s.cpuTemp + Math.round((Math.random() - 0.5) * 2))),
+        gpuTemp: Math.max(88, Math.min(108, s.gpuTemp + Math.round((Math.random() - 0.5) * 2))),
+        block: s.block + (Math.random() < 0.4 ? 1 : 0),
+        activeNodes: s.activeNodes + Math.floor((Math.random() - 0.45) * 8),
+        curesPerMin: Math.max(900, Math.min(1500, s.curesPerMin + Math.floor((Math.random() - 0.5) * 30)))
+      }));
+    }, 1500);
+  }
+
+  componentWillUnmount() { clearInterval(this.tick); }
+
+  renderVals() {
+    const on = this.state.on;
+    return {
+      ram: this.state.ram.toFixed(1),
+      cpu: this.state.cpu,
+      gpu: this.state.gpu,
+      cpuTemp: this.state.cpuTemp,
+      gpuTemp: this.state.gpuTemp,
+      scouts: on ? this.state.scouts : 0,
+      block: this.state.block.toLocaleString(),
+      powerBg: on ? '#78be43' : '#3b3a40',
+      powerGlow: on ? '0 0 18px rgba(120,190,67,0.45)' : 'none',
+      bannerBg: on ? 'rgba(120,190,67,0.07)' : 'rgba(224,90,90,0.07)',
+      bannerColor: on ? '#a9e07f' : '#e08a8a',
+      bannerText: on ? 'Protection active — immune system online' : 'Protection paused — scouts standing down',
+      togglePower: () => this.setState(s => ({ on: !s.on })),
+      userName: localStorage.getItem('panacea_user_name') || 'agent',
+      activeNodes: this.state.activeNodes.toLocaleString(),
+      curesPerMin: this.state.curesPerMin.toLocaleString(),
+      procCount: 214,
+      netDown: (2.4 + (this.state.cpu - 22) * 0.05).toFixed(1),
+      netUp: (0.6 + (this.state.gpu - 10) * 0.02).toFixed(1),
+      uptime: '3d 14h 02m',
+      battery: 100,
+      processes: [
+        { name: 'Chrome', scout: 'Scout_04', cpu: Math.max(1, Math.round(this.state.cpu * 0.45)), mem: '1.8 GB', status: 'Nominal', color: '#78be43' },
+        { name: 'VS Code', scout: 'Scout_04', cpu: Math.max(1, Math.round(this.state.cpu * 0.2)), mem: '920 MB', status: 'Nominal', color: '#78be43' },
+        { name: 'Spotify', scout: 'Scout_04', cpu: 2, mem: '480 MB', status: 'Nominal', color: '#78be43' },
+        { name: 'node', scout: 'Scout_11', cpu: Math.max(1, Math.round(this.state.cpu * 0.25)), mem: '640 MB', status: 'Elevated I/O — watching', color: '#d9c85a' },
+        { name: 'Figma', scout: 'Scout_09', cpu: 4, mem: '1.1 GB', status: 'Nominal', color: '#78be43' },
+        { name: 'svchost', scout: 'Scout_07', cpu: 1, mem: '85 MB', status: 'Nominal', color: '#78be43' },
+        { name: 'Panacea', scout: '—', cpu: 1, mem: '8.2 MB', status: 'Self', color: '#c5b3e6' }
+      ],
+      blocks: [
+        { num: '14,092', ago: '02s ago', trajectory: 'Syscall.Entropy.High', vector: 'ipfs://bafybe…', status: 'Active & verified', statusColor: '#a9e07f' },
+        { num: '14,091', ago: '14m ago', trajectory: 'Process.Injection.Fork', vector: 'ipfs://bafybg…', status: 'Suppressed (allergy)', statusColor: '#d9c85a' }
+      ],
+      events: [
+        { time: '14:32', color: '#78be43', text: 'Scout #17 reported syscall anomaly — signature matched Threat Registry, confidence low. Monitoring.' },
+        { time: '13:04', color: '#c5b3e6', text: 'Soldier awakened, cloned PID 4821 into MicroVM. Allele A3 matched — clean crash. Apoptosis complete.' },
+        { time: '11:47', color: '#8f8c96', text: 'Genome Registry sync — 3 new Wasm kill-modules verified from IPFS.' },
+        { time: '09:15', color: '#78be43', text: 'Cross-host behavioral match escalated globally — this host inherited immunity to CVE-2026-1183.' },
+        { time: '08:00', color: '#8f8c96', text: 'Proof of Immunity validation passed — session anchored to State Ledger.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

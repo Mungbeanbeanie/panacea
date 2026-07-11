@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protection — Panacea</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #1c1c1f; }
+    body { font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #c5b3e6; text-decoration: none; }
+    a:hover { color: #ddd0f2; }
+    @view-transition { navigation: auto; }
+    ::view-transition-old(root) { animation: 220ms ease-out both pan-fade-out; }
+    ::view-transition-new(root) { animation: 260ms ease-in both pan-fade-in; }
+    @keyframes pan-fade-out { to { opacity: 0; } }
+    @keyframes pan-fade-in { from { opacity: 0; } }
+    @keyframes pan-page-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    x-dc > div { animation: 320ms ease-out both pan-page-enter; }
+    ::selection { background: rgba(197,179,230,0.35); }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; background: #1c1c1f; color: #f2f1f4; display: flex; flex-direction: column">
+
+  <!-- NAV -->
+  <nav style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 48px; border-bottom: 1px solid #2c2b31">
+    <a href="Panacea Landing.dc.html" style="display: flex; flex-direction: column; gap: 2px; color: #f2f1f4" style-hover="color: #ffffff">
+      <span style="font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: 0.5px">Panacea</span>
+      <span style="font-size: 12px; color: #8f8c96">Welcome, {{ userName }}.</span>
+    </a>
+    <div style="display: flex; align-items: center; gap: 28px">
+      <a href="Dashboard.dc.html" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Home</a>
+      <a href="Account.dc.html" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Account</a>
+      <a href="Protection.dc.html" style="font-size: 14px; font-weight: 600; color: #ffffff">Protection</a>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main data-screen-label="Protection" style="max-width: 1180px; width: 100%; margin: 0 auto; padding: 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 40px">
+
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <h1 style="font-family: 'Chakra Petch', sans-serif; font-size: 32px; font-weight: 700; margin: 0">Protection</h1>
+        <p style="font-size: 15px; color: #8f8c96; margin: 0">Every threat this host has faced — and how it was killed.</p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; background: rgba(120,190,67,0.07); border: 1px solid rgba(120,190,67,0.35); border-radius: 10px; padding: 12px 20px">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #78be43; display: inline-block"></span>
+        <span style="font-size: 13px; font-weight: 600; color: #a9e07f; letter-spacing: 1px; text-transform: uppercase">All systems immune</span>
+      </div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px">
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Threats killed</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums">37</div>
+        <div style="font-size: 12px; color: #8f8c96">Lifetime, this host</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Immunities inherited</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: #a9e07f">184,209</div>
+        <div style="font-size: 12px; color: #8f8c96">From the network</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">In quarantine</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums">2</div>
+        <div style="font-size: 12px; color: #8f8c96">Awaiting verdict</div>
+      </div>
+      <div style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Allergies</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: #d9c85a">1</div>
+        <div style="font-size: 12px; color: #8f8c96">Suppressed responses</div>
+      </div>
+    </section>
+
+    <!-- KILL LOG -->
+    <section style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Soldier deployment log</div>
+        <div style="font-size: 12px; color: #8f8c96">Most recent first</div>
+      </div>
+      <sc-for list="{{ kills }}" as="k" hint-placeholder-count="4">
+        <div style="display: flex; flex-direction: column; gap: 10px; padding: 18px 0; border-bottom: 1px solid #2c2b31">
+          <div style="display: flex; align-items: center; gap: 14px">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: {{ k.color }}; display: inline-block; flex-shrink: 0"></span>
+            <span style="font-family: 'Chakra Petch', sans-serif; font-size: 15px; font-weight: 600">{{ k.threat }}</span>
+            <span style="font-size: 12px; color: #8f8c96; margin-left: auto; font-variant-numeric: tabular-nums">{{ k.date }}</span>
+          </div>
+          <div style="display: flex; gap: 32px; padding-left: 22px; flex-wrap: wrap">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 160px">
+              <span style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Detected by</span>
+              <span style="font-size: 13px; color: #c5b3e6; font-family: 'Chakra Petch', sans-serif">{{ k.scout }}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 200px">
+              <span style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Kill allele</span>
+              <span style="font-size: 13px; color: #d6d3dd">{{ k.allele }}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 140px">
+              <span style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Time to kill</span>
+              <span style="font-size: 13px; color: #d6d3dd; font-variant-numeric: tabular-nums">{{ k.ttk }}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 160px">
+              <span style="font-size: 11px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Outcome</span>
+              <span style="font-size: 13px; font-weight: 600; color: {{ k.color }}">{{ k.outcome }}</span>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </section>
+
+    <!-- ALLERGY LIST -->
+    <section style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 40px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Allergy list</div>
+        <div style="font-size: 13px; color: #8f8c96">Programs you've told Panacea to tolerate despite suspicious behavior.</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px; padding: 16px 0; border-top: 1px solid #2c2b31">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #d9c85a; display: inline-block; flex-shrink: 0"></span>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 14px; font-weight: 500">dev-hot-reload.exe</span>
+          <span style="font-size: 12px; color: #8f8c96">Trajectory: Process.Injection.Fork — suppressed by you, Jul 8</span>
+        </div>
+        <button onClick="{{ noop }}" style="margin-left: auto; font-size: 13px; font-weight: 600; color: #f2f1f4; background: none; border: 1px solid #3b3a40; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif" style-hover="border-color: #e08a8a; color: #e08a8a">Revoke allergy</button>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      noop: () => {},
+      userName: localStorage.getItem('panacea_user_name') || 'agent',
+      kills: [
+        { threat: 'Trojan.Keylog.Variant-C', date: 'Jul 10, 13:04', scout: 'Scout_11', allele: 'A3 — Memory-buffer flooding', ttk: '4.2s', outcome: 'Killed, apoptosis complete', color: '#78be43' },
+        { threat: 'Zero-day (unnamed)', date: 'Jul 9, 02:31', scout: 'Scout_04', allele: 'A1 — Thread exit-tokens', ttk: '11.8s', outcome: 'Killed, genome published', color: '#78be43' },
+        { threat: 'Cryptominer.XMRig.Mod', date: 'Jul 6, 19:22', scout: 'Scout_07', allele: 'A2 — Resource starvation', ttk: '2.9s', outcome: 'Killed, apoptosis complete', color: '#78be43' },
+        { threat: 'Ransomware.Locky.2026', date: 'Jul 2, 08:15', scout: 'Scout_04', allele: 'Inherited — network genome', ttk: '0.4s', outcome: 'Killed before execution', color: '#a9e07f' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

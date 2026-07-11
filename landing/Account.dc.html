@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account — Panacea</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #1c1c1f; }
+    body { font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #c5b3e6; text-decoration: none; }
+    a:hover { color: #ddd0f2; }
+    @view-transition { navigation: auto; }
+    ::view-transition-old(root) { animation: 220ms ease-out both pan-fade-out; }
+    ::view-transition-new(root) { animation: 260ms ease-in both pan-fade-in; }
+    @keyframes pan-fade-out { to { opacity: 0; } }
+    @keyframes pan-fade-in { from { opacity: 0; } }
+    @keyframes pan-page-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    x-dc > div { animation: 320ms ease-out both pan-page-enter; }
+    ::selection { background: rgba(197,179,230,0.35); }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; background: #1c1c1f; color: #f2f1f4; display: flex; flex-direction: column">
+
+  <!-- NAV -->
+  <nav style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 48px; border-bottom: 1px solid #2c2b31">
+    <a href="Panacea Landing.dc.html" style="display: flex; flex-direction: column; gap: 2px; color: #f2f1f4" style-hover="color: #ffffff">
+      <span style="font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: 0.5px">Panacea</span>
+      <span style="font-size: 12px; color: #8f8c96">Welcome, {{ userName }}.</span>
+    </a>
+    <div style="display: flex; align-items: center; gap: 28px">
+      <a href="Dashboard.dc.html" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Home</a>
+      <a href="Account.dc.html" style="font-size: 14px; font-weight: 600; color: #ffffff">Account</a>
+      <a href="Protection.dc.html" style="font-size: 14px; font-weight: 500; color: #c9c6d0" style-hover="color: #ffffff">Protection</a>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main data-screen-label="Account" style="max-width: 880px; width: 100%; margin: 0 auto; padding: 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 32px">
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <h1 style="font-family: 'Chakra Petch', sans-serif; font-size: 32px; font-weight: 700; margin: 0">Account</h1>
+      <p style="font-size: 15px; color: #8f8c96; margin: 0">Your identity, hosts, and standing in the immune network.</p>
+    </div>
+
+    <!-- PROFILE -->
+    <section style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; align-items: center; gap: 22px">
+      <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(197,179,230,0.12); border: 1px solid rgba(197,179,230,0.4); display: flex; align-items: center; justify-content: center; font-family: 'Chakra Petch', sans-serif; font-size: 22px; font-weight: 700; color: #c5b3e6; flex-shrink: 0">{{ initials }}</div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 20px; font-weight: 600">{{ userName }}</div>
+        <div style="font-size: 14px; color: #8f8c96">{{ userEmail }} · Member since Jul 2026 · Open beta</div>
+      </div>
+      <button onClick="{{ noop }}" style="margin-left: auto; font-size: 13px; font-weight: 600; color: #f2f1f4; background: none; border: 1px solid #3b3a40; border-radius: 8px; padding: 9px 18px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; flex-shrink: 0" style-hover="border-color: #c5b3e6">Edit profile</button>
+    </section>
+
+    <!-- ENROLLED HOSTS -->
+    <section style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Enrolled hosts</div>
+        <button onClick="{{ noop }}" style="font-size: 13px; font-weight: 600; color: #17240d; background: #78be43; border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif" style-hover="background: #8ecf5b">+ Enroll a host</button>
+      </div>
+      <sc-for list="{{ hosts }}" as="h" hint-placeholder-count="2">
+        <div style="display: flex; align-items: center; gap: 14px; padding: 15px 0; border-bottom: 1px solid #2c2b31">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: {{ h.color }}; display: inline-block; flex-shrink: 0"></span>
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 14px; font-weight: 500">{{ h.name }}</span>
+            <span style="font-size: 12px; color: #8f8c96">{{ h.detail }}</span>
+          </div>
+          <span style="font-size: 13px; color: {{ h.color }}; font-weight: 600; margin-left: auto">{{ h.status }}</span>
+        </div>
+      </sc-for>
+    </section>
+
+    <!-- VALIDATOR STANDING -->
+    <section style="background: #232227; border: 1px solid #2f2e34; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 18px; margin-bottom: 40px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">Proof of Immunity standing</div>
+        <div style="font-size: 13px; color: #8f8c96">Your hosts validate blocks by proving target-isolation metrics.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px">
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums">1,042</span>
+          <span style="font-size: 12px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Blocks validated</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: #a9e07f">99.7%</span>
+          <span style="font-size: 12px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Isolation score</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: #c5b3e6">3</span>
+          <span style="font-size: 12px; color: #8f8c96; letter-spacing: 1px; text-transform: uppercase">Genomes contributed</span>
+        </div>
+      </div>
+    </section>
+
+    <div style="display: flex; justify-content: flex-start; margin-bottom: 60px">
+      <button onClick="{{ logOut }}" style="font-size: 14px; font-weight: 600; color: #e08a8a; background: none; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; border: 1px solid rgba(224,90,90,0.35); border-radius: 8px; padding: 10px 20px" style-hover="border-color: #e08a8a">Log out</button>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      noop: () => {},
+      userName: localStorage.getItem('panacea_user_name') || 'agent',
+      userEmail: localStorage.getItem('panacea_user_email') || 'unknown@panacea.net',
+      initials: (localStorage.getItem('panacea_user_name') || 'A').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+      logOut: () => {
+        localStorage.setItem('panacea_signed_in', '0');
+        window.location.href = 'Panacea Landing.dc.html';
+      },
+      hosts: [
+        { name: 'Vicky\u2019s MacBook Pro', detail: 'macOS 15.4 · This device · 46 scouts, 142 spores', status: 'Protected', color: '#78be43' },
+        { name: 'Home desktop', detail: 'Windows 11 · Last seen 2h ago · 38 scouts, 120 spores', status: 'Protected', color: '#78be43' },
+        { name: 'Old ThinkPad', detail: 'Ubuntu 24.04 · Last seen 12d ago', status: 'Offline', color: '#8f8c96' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
