@@ -79,11 +79,11 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 2 — Threat Registry (Ledger 2)
 **Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock `Threat_ID`/schema
 
-- [ ] `Threat_ID` = cryptographic hash of the behavioral vector
-- [ ] Store `Behavioral_Schema`
-- [ ] `Confidence_Score` integer, incremented on matching trajectory
-- [ ] Correlate an incoming vector to an existing `Threat_ID`
-- [ ] Trigger network-wide mobilization once the confidence threshold is crossed
+- [x] `Threat_ID` = cryptographic hash of the behavioral vector
+- [x] Store `Behavioral_Schema`
+- [x] `Confidence_Score` integer, incremented on matching trajectory
+- [x] Correlate an incoming vector to an existing `Threat_ID`
+- [x] Trigger network-wide mobilization once the confidence threshold is crossed
 
 **Done when:** two matching trajectories increment the score and fire a (mocked) mobilization.
 
