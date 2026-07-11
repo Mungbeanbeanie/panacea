@@ -145,9 +145,9 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 8 — Stage 4 (Consensus & Ledger Commitment)
 **Owner:** A+B · **Depends on:** 0, **6**, **7** · **Parallel-safe:** after 6+7 · **Decouple via:** mock proof
 
-- [ ] Generate a ZK-Proof: gene neutralizes the threat + passed the allergy check, without exposing host/malware (mock)
-- [ ] Validators verify via Proof of Immunity consensus (mock)
-- [ ] Commit the gene to the blockchain (Genome Registry entry + State Ledger root update)
+- [x] Generate a ZK-Proof: gene neutralizes the threat + passed the allergy check, without exposing host/malware (mock)
+- [x] Validators verify via Proof of Immunity consensus (mock)
+- [x] Commit the gene to the blockchain (Genome Registry entry + State Ledger root update)
 
 **Done when:** a passing gene produces a (mock) proof, is verified, and a committed record appears.
 

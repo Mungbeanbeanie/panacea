@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 
 use crate::core::{GeneHandle, ThreatId};
 use crate::evolution::alleles::GenePayload;
+use crate::ledger::state::Hash;
 
 /// Confidence score that triggers a network-wide mobilization command.
 ///
@@ -147,6 +148,14 @@ impl GenomeRegistry {
         if let Some(entry) = self.entries.get_mut(threat_id) {
             entry.epigenetic_status = EpigeneticStatus::Suppressed;
         }
+    }
+
+    /// All row hashes (`Wasm_Gene_Hash`s), sorted for a stable leaf order — the set a Stage 4
+    /// commit rebuilds the genome Merkle tree over (see ../consensus.rs).
+    pub fn gene_hashes(&self) -> Vec<Hash> {
+        let mut hashes: Vec<Hash> = self.entries.values().map(|e| e.gene_hash.0).collect();
+        hashes.sort();
+        hashes
     }
 }
 
