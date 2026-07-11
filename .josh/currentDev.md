@@ -1,27 +1,34 @@
-# Current Dev Plan — Phase 11, Steps 6–11 (Solana Migration: Wiring the Rust Core)
+# Current Dev Plan — Phase 11 (Solana Migration)
 
-> Scratch planning doc only (`.josh/` is gitignored). **Nothing here is implemented until
-> the user says "implement."** Conforms to `.claude/docs/source-of-truth.md` (canonical)
-> and `.claude/docs/plan.md` Phase 11 (owner B).
+> Scratch planning doc only (`.josh/` is gitignored). Conforms to
+> `.claude/docs/source-of-truth.md` (canonical) and `.claude/docs/plan.md` Phase 11
+> (owner B).
 >
-> Steps 1–5 (Anchor workspace + `submit_threat`/`commit_gene`/`suppress_gene` +
-> devnet deploy) are done and live — program ID
-> `FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x` on devnet, IDL at
-> `target/idl/bio_digital_defense.json`. Deployer wallet: `~/.config/solana/id.json`
-> (`HeAubH3AUZDwztNC3BCsDSacnGSAXnd2ZpLJ3H68W6b3`). Lymph Node validator keypairs:
-> `keys/lymph-nodes/validator-{1..5}.json` (gitignored). This doc stages what's left.
+> **✅ Boxes 1–9 and 11 implemented and verified against real Solana devnet.** Program:
+> `FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x`. A live (`#[ignore]`d) test —
+> `ledger::client::live_devnet_tests::submit_commit_and_suppress_round_trip_against_devnet`
+> — proved `submit_threat` → `ThreatRegistry` read, 3-of-5-multisig `commit_gene` →
+> `GenomeRegistry` read, and `suppress_gene` → a **freshly constructed** `GenomeRegistry`
+> correctly reading `epigenetic_status = 1` back (ruling out stale in-memory cache), all
+> against the real deployed program. Cost ~0.003 SOL total. Offline suite: 16 passed, 0
+> failed, 2 ignored (pre-existing real-process tests, unaffected).
+>
+> **🟡 Box 10 (real IPFS) blocked on your Pinata API key.** `ledger/ipfs.rs` is fully
+> written (Pinata `pinJSONToIPFS`/gateway fetch, `PINATA_JWT` env var) and compiles, but
+> is untested end-to-end — needs your `PINATA_JWT` to actually run. Everything else in
+> Phase 11 is done.
 
 ## Scope (`.claude/docs/plan.md` Phase 11)
 
 | # | Phase 11 box | Status |
 |---|---|---|
 | 1–5 | Anchor program, all 3 instructions, devnet deploy | ✅ done |
-| 6 | `ledger/client.rs`: real `solana-client`/RPC transport | 🟡 staged below |
-| 7 | `ledger/state.rs`: commitment-level reads, drop Merkle code | 🟡 staged below |
-| 8 | `ledger/registry.rs`: read-through cache of on-chain PDAs | 🟡 staged below |
-| 9 | Devnet keypair provisioning (endpoints + validators) | 🟡 staged below |
-| 10 | Real IPFS pinning-service integration | 🟡 staged below |
-| 11 | Re-run `suppression-path-test` / `sandbox-isolation-check` against the live path | 🟡 staged below |
+| 6 | `ledger/client.rs`: real RPC transport (`anchor-client`) | ✅ done, live-verified |
+| 7 | `ledger/state.rs`: commitment-level reads, drop Merkle code | ✅ done, live-verified |
+| 8 | `ledger/registry.rs`: read-through cache of on-chain PDAs | ✅ done, live-verified |
+| 9 | Devnet keypair provisioning (endpoints + validators) | ✅ done, live-verified |
+| 10 | Real IPFS pinning-service integration | 🟡 code written, blocked on `PINATA_JWT` |
+| 11 | Re-run `suppression-path-test` / `sandbox-isolation-check` against the live path | ✅ done — see below |
 
 ## What already exists (the mock boxes 6–11 replace — read this session)
 

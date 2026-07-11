@@ -71,7 +71,7 @@ impl IpfsClient {
 /// The gene-fetch boundary `resolve_and_run` depends on (Phase 11 box 11, Q8) — the same
 /// reasoning as `GenomeSource` in `../registry.rs`: a real `IpfsClient` backs the live path,
 /// `FakeGeneStore` backs the existing offline tests without hitting the network.
-pub trait GeneStore {
+pub trait GeneStore: Send {
     /// Fetches gene bytecode by CID, verifying it against `expected_hash` before handing it
     /// back — this comparison *is* the verification step now (see `../state.rs`'s
     /// commitment-level reads), replacing the old Merkle-proof check.

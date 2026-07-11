@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 /// independent Scouts globally have reported it. Mirrors `ledger::registry::ThreatEntry`
 /// in the Rust core mock; `threat_id` is both the row key and the PDA seed.
 #[account]
-#[derive(InitSpace)]
+#[derive(InitSpace, Debug)]
 pub struct ThreatEntry {
     pub threat_id: [u8; 32],
     /// Hash of the `Behavioral_Schema` (the syscall/network-port sequence), not the raw
@@ -19,7 +19,7 @@ pub struct ThreatEntry {
 /// suppression-path-test — the kill-switch check reads this field before any gene
 /// fetch/exec).
 #[account]
-#[derive(InitSpace)]
+#[derive(InitSpace, Debug)]
 pub struct GenomeEntry {
     pub threat_id: [u8; 32],
     pub gene_hash: [u8; 32],

@@ -122,3 +122,108 @@ impl SolanaConjugationLink {
         Ok(request.send()?)
     }
 }
+
+#[cfg(test)]
+mod live_devnet_tests {
+    use solana_keypair::read_keypair_file;
+
+    use super::*;
+    use crate::ledger::registry::GenomeSource;
+    use crate::ledger::state::SolanaLightClient;
+
+    fn deployer() -> Arc<Keypair> {
+        let path = format!(
+            "{}/.config/solana/id.json",
+            std::env::var("HOME").expect("HOME not set")
+        );
+        Arc::new(read_keypair_file(&path).expect("read deployer keypair"))
+    }
+
+    fn validators() -> Vec<Keypair> {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        (1..=5)
+            .map(|i| {
+                let path = format!("{manifest_dir}/../keys/lymph-nodes/validator-{i}.json");
+                read_keypair_file(&path).expect("read Lymph Node validator keypair")
+            })
+            .collect()
+    }
+
+    /// Exercises the real on-chain path end to end against Solana devnet: `submit_threat`,
+    /// then a 3-of-5 multisig `commit_gene` + `suppress_gene`, reading each result back via
+    /// `SolanaLightClient`/`ThreatRegistry`/`GenomeRegistry` — everything Phase 11 boxes 6-9
+    /// cover *except* real IPFS (box 10 needs a Pinata key this test doesn't have, so it
+    /// uses a placeholder CID instead of a real upload). Costs real devnet SOL (tiny) and
+    /// takes several seconds for transaction confirmation, so it's `#[ignore]`d like the
+    /// existing real-process tests — run locally with `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "hits live Solana devnet; run locally with --ignored"]
+    fn submit_commit_and_suppress_round_trip_against_devnet() {
+        use crate::ledger::registry::{GenomeRegistry, ThreatRegistry};
+
+        let payer = deployer();
+        let validators = validators();
+        let conjugation =
+            SolanaConjugationLink::new(Cluster::Devnet, payer.clone()).expect("connect");
+
+        // A fresh threat_id each run so repeated test runs don't collide with a
+        // previously-suppressed PDA from an earlier pass.
+        let threat_id = ThreatId(rand_bytes());
+
+        conjugation
+            .submit_threat(threat_id, [0xAA; 32])
+            .expect("submit_threat");
+
+        let threat_registry =
+            ThreatRegistry::new(SolanaLightClient::new(Cluster::Devnet, payer.clone()).expect("connect"));
+        let threat_entry = threat_registry
+            .get(&threat_id)
+            .expect("read threat entry")
+            .expect("threat entry exists after submit_threat");
+        assert_eq!(threat_entry.confidence_score, 1);
+
+        let gene_hash = [0xBB; 32];
+        conjugation
+            .commit_gene(
+                threat_id,
+                GeneHandle(gene_hash),
+                Cid("placeholder-cid-no-pinata-key-yet".into()),
+                &validators,
+            )
+            .expect("commit_gene");
+
+        let genome_registry =
+            GenomeRegistry::new(SolanaLightClient::new(Cluster::Devnet, payer.clone()).expect("connect"));
+        let genome_entry = genome_registry
+            .get(&threat_id)
+            .expect("read genome entry")
+            .expect("genome entry exists after commit_gene");
+        assert_eq!(genome_entry.epigenetic_status, 0, "starts Active");
+
+        conjugation
+            .suppress_gene(threat_id, &validators)
+            .expect("suppress_gene");
+
+        // Deliberately reusing the *same* `genome_registry` instance from the pre-suppression
+        // read above — this is the regression test for a caching bug this review caught and
+        // fixed: `GenomeRegistry` used to memoize reads per `Threat_ID`, which would have
+        // silently returned the stale `Active` entry here instead of re-querying the chain.
+        // `source-of-truth.md` requires a suppression to take effect on the Soldier's *next*
+        // RPC query, so `GenomeRegistry` now has no memo at all — every `get()` is fresh.
+        let entry_after = genome_registry
+            .get(&threat_id)
+            .expect("read genome entry")
+            .expect("still exists");
+        assert_eq!(entry_after.epigenetic_status, 1, "suppress_gene flips it to Suppressed");
+    }
+
+    fn rand_bytes() -> [u8; 32] {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let mut bytes = [0u8; 32];
+        bytes[..4].copy_from_slice(&nanos.to_le_bytes());
+        bytes
+    }
+}

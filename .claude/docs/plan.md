@@ -188,16 +188,18 @@ left in place with real Solana devnet integration.
       is Proof of Immunity
 - [x] `suppress_gene` instruction: same multisig authority flips `Epigenetic_Status` to 1
 - [x] Deploy the program to Solana devnet; record the program ID in `Anchor.toml`
-- [ ] Rust core: replace `ledger/client.rs`'s mock transport with `solana-client`/
-      `solana-sdk` RPC calls
-- [ ] Rust core: `ledger/state.rs` becomes commitment-level account reads (drop the custom
-      Merkle-path code)
-- [ ] `ledger/registry.rs` becomes a local read-through cache of the on-chain PDAs
-- [ ] Devnet keypair provisioning per endpoint (Scout signer) and per Lymph Node validator
-      (multisig signer), funded via faucet
+- [x] Rust core: replace `ledger/client.rs`'s mock transport with `anchor-client` RPC calls
+      (chosen over hand-rolled `solana-client`/`solana-sdk` — builds instructions from the
+      IDL; see `tech-stack.md`)
+- [x] Rust core: `ledger/state.rs` becomes commitment-level account reads (dropped the
+      custom Merkle-path code entirely)
+- [x] `ledger/registry.rs` becomes a local read-through cache of the on-chain PDAs
+- [x] Devnet keypair provisioning per endpoint (Scout signer, reusing the deployer wallet)
+      and per Lymph Node validator (multisig co-signer — no funding needed, pure signers)
 - [ ] Gene binaries: real IPFS pinning-service integration (upload on `commit_gene`, fetch
-      by CID before Soldier execution)
-- [ ] Re-run `suppression-path-test` and `sandbox-isolation-check` against the live Solana
+      by CID before Soldier execution) — code in `ledger/ipfs.rs` targets Pinata, but is
+      untested end-to-end pending a `PINATA_JWT` API key
+- [x] Re-run `suppression-path-test` and `sandbox-isolation-check` against the live Solana
       path
 
 **Done when:** a real devnet transaction commits a gene to the Genome Registry PDA under

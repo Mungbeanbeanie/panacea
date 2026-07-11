@@ -31,12 +31,14 @@ bio-digital-defense/
 │       │   ├── sandbox.rs       # MicroVM/enclave setup, teardown, isolation guarantees
 │       │   └── alleles.rs       # Exploit-primitive matrix + combinatorial fuzz driver
 │       └── ledger/                                                                    [B]
-│           ├── mod.rs           # Ledger facade the rest of the core talks to
+│           ├── mod.rs           # Ledger facade + shared LedgerError type
 │           ├── client.rs        # Solana RPC transaction submission ("conjugation"),
-│                                 # via solana-client/solana-sdk
+│                                 # via anchor-client (submit_threat/commit_gene/suppress_gene)
 │           ├── state.rs         # Commitment-level account reads (light-client wrapper)
-│           └── registry.rs      # Local read-through cache mirroring the on-chain
-│                                 # Threat + Genome PDAs
+│           ├── registry.rs      # GenomeSource trait + read-through cache mirroring the
+│                                 # on-chain Threat + Genome PDAs (real + offline-fake impls)
+│           └── ipfs.rs          # GeneStore trait + real Pinata client (real + offline-fake
+│                                 # impls) — gene binary upload/fetch
 │
 └── landing/                     # React + Vite dashboard (read-only)         [owner C]
     ├── CLAUDE.md                # Frontend-specific guidance (scoped)

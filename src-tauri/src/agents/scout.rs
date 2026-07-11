@@ -240,8 +240,10 @@ pub fn spawn_demo() -> JoinHandle<()> {
     let (wake_tx, wake_rx) = channel::<WakeSignal>();
     let (threat_tx, threat_rx) = channel::<ThreatReport>();
 
+    let home = std::env::var("HOME").expect("HOME not set");
     let deployer = Arc::new(
-        read_keypair_file("~/.config/solana/id.json").expect("read deployer keypair"),
+        read_keypair_file(format!("{home}/.config/solana/id.json"))
+            .expect("read deployer keypair"),
     );
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let validators: Vec<_> = (1..=5)

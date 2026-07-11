@@ -1,14 +1,7 @@
 //! Ledger facade: the unified interface the rest of the core uses to reach the State
 //! Ledger, Threat Registry, and Genome Registry. See ../../.claude/docs/architecture.md.
-//!
-//! `consensus.rs` is the pre-Solana-migration mock of Stage 4 (`ImmunityProof`,
-//! `run_poi_consensus`) — superseded by the real on-chain `commit_gene` instruction
-//! (`programs/bio_digital_defense`) once `client.rs`/`state.rs`/`registry.rs` wire to it.
-//! Left in place (unused) rather than deleted here, since deleting it wasn't part of this
-//! change's scope.
 
 pub mod client;
-pub mod consensus;
 pub mod ipfs;
 pub mod registry;
 pub mod state;
@@ -19,6 +12,8 @@ pub mod state;
 pub enum LedgerError {
     #[error("Solana RPC/client error: {0}")]
     Solana(#[from] anchor_client::ClientError),
+    #[error("Solana RPC error: {0}")]
+    Rpc(#[from] anchor_client::SolanaClientError),
     #[error("failed to deserialize on-chain account: {0}")]
     AccountDecode(#[from] anchor_client::anchor_lang::error::Error),
     #[error("PINATA_JWT environment variable is not set")]

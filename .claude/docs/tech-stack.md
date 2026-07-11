@@ -12,15 +12,17 @@ inferring it (Working Agreement, Rule 4).
   `evolution/sandbox.rs`).
 - **Ledger / on-chain program:** Solana (devnet). The Threat and Genome Registries are an
   Anchor program in its own workspace (`programs/`, separate from `src-tauri/` — see
-  [File Structure](file-structure.md)). Local nodes are RPC light clients (Rust
-  `solana-client`/`solana-sdk` crates) — no local validator. Each endpoint holds a devnet
-  keypair to sign its own transactions (funded via faucet; never real funds). Lymph Node
-  validators hold separate persistent keypairs used as the 3-of-5 multisig signers gating
+  [File Structure](file-structure.md)). Local nodes are RPC light clients via the
+  `anchor-client` crate (blocking API — no `tokio` ripples through the agent core; reads
+  at `confirmed` commitment) — no local validator. Each endpoint holds a devnet keypair to
+  sign its own transactions (funded via faucet; never real funds). Lymph Node validators
+  hold separate persistent keypairs used as the 3-of-5 multisig co-signers gating
   `commit_gene`/`suppress_gene` ("Proof of Immunity" — see
-  [Source of Truth](source-of-truth.md)).
-- **Gene storage:** real IPFS via a pinning service (e.g. web3.storage/Pinata HTTP API) —
-  content-addressed, hash-verified against the on-chain `Wasm_Gene_Hash` before a Soldier
-  runs it.
+  [Source of Truth](source-of-truth.md)); they sign only, so they need no faucet funding of
+  their own.
+- **Gene storage:** real IPFS via Pinata's pinning API (`ledger/ipfs.rs`, `reqwest`
+  blocking client) — content-addressed, hash-verified against the on-chain `Wasm_Gene_Hash`
+  before a Soldier runs it.
 - **What's still simulated:** the malware/virus itself (synthetic fixtures only — see
   [Security & Safety](security.md)) and the MicroVM/Wasm sandbox host. The chain,
   consensus finality, on-chain program, and gene storage are real.

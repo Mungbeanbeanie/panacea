@@ -2,7 +2,6 @@
 //! Phase 11, box 8) — replaces the in-memory `HashMap`-backed mocks. `MockIpfsStore`
 //! moved to `../ipfs.rs` (Q6).
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 pub use bio_digital_defense::{GenomeEntry, ThreatEntry};
@@ -14,37 +13,31 @@ use crate::ledger::LedgerError;
 /// The genome-lookup boundary `resolve_and_run` depends on (Phase 11 box 11, Q8) — a real
 /// `GenomeRegistry` backs the live path; `FakeGenomeSource` backs the existing offline
 /// tests without hitting devnet.
-pub trait GenomeSource {
+pub trait GenomeSource: Send {
     fn get(&self, threat_id: &ThreatId) -> Result<Option<GenomeEntry>, LedgerError>;
 }
 
 /// Read-through wrapper over the Genome Registry PDA — "cache" means "the read path," not
-/// a persistent local store (plan.md box 8 wording). A short-lived in-memory memo avoids a
-/// second RPC round-trip for the same `Threat_ID` within one Soldier dispense.
+/// a persistent local store (plan.md box 8 wording). Deliberately **no** memoization: this
+/// is reused across every wake signal in the long-running `Soldier::run` loop, and
+/// `source-of-truth.md` requires a suppression to take effect on the *next* RPC query — a
+/// cached read could silently mask a suppression that landed between two dispenses of the
+/// same `Threat_ID` (caught by `suppression-path-test` during this review).
 pub struct GenomeRegistry {
     light_client: SolanaLightClient,
-    memo: RefCell<HashMap<ThreatId, Option<GenomeEntry>>>,
 }
 
 impl GenomeRegistry {
     pub fn new(light_client: SolanaLightClient) -> Self {
-        Self {
-            light_client,
-            memo: RefCell::new(HashMap::new()),
-        }
+        Self { light_client }
     }
 }
 
 impl GenomeSource for GenomeRegistry {
     /// On-demand lookup by `Threat_ID` — never a passive scan, mirrors
-    /// `GenomeRegistry::get()` in the old mock.
+    /// `GenomeRegistry::get()` in the old mock. Always a fresh RPC read.
     fn get(&self, threat_id: &ThreatId) -> Result<Option<GenomeEntry>, LedgerError> {
-        if let Some(cached) = self.memo.borrow().get(threat_id) {
-            return Ok(cached.clone());
-        }
-        let entry = self.light_client.get_genome_entry(threat_id)?;
-        self.memo.borrow_mut().insert(*threat_id, entry.clone());
-        Ok(entry)
+        self.light_client.get_genome_entry(threat_id)
     }
 }
 
