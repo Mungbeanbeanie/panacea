@@ -10,6 +10,11 @@ mod ledger;
 
 fn main() {
     tauri::Builder::default()
+        .setup(|_app| {
+            // Scout daemon runs detached for the app lifetime; handle dropped on purpose.
+            agents::scout::spawn_demo();
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
