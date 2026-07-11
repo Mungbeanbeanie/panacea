@@ -35,6 +35,15 @@ library features. If you're unsure whether something compiles, exists in the pin
 version, or behaves as described, say so and verify (check `Cargo.toml`, `package.json`,
 docs) instead of guessing. Confident-and-wrong is the most expensive failure mode here.
 
+## Rule 5 — Conform to the Source of Truth
+
+The [Source of Truth](source-of-truth.md) is the canonical spec — thresholds, stage
+boundaries, ledger fields, data flow. Build to match it. If a change would contradict it,
+stop and flag (Rule 1); don't silently diverge. If the spec itself is wrong, change
+`source-of-truth.md` first, then the code. Run the
+[`source-of-truth-check`](../skills/source-of-truth-check/SKILL.md) skill before finishing
+any task that touches a stage, ledger, or agent.
+
 ## General practices these imply
 
 - **Modular by default.** Small, single-responsibility functions and modules. If a file

@@ -7,7 +7,9 @@ model: inherit
 
 You work on the read-only observability dashboard. Read
 [landing/CLAUDE.md](../../landing/CLAUDE.md) and
-[.claude/docs/conventions.md](../docs/conventions.md) first.
+[.claude/docs/conventions.md](../docs/conventions.md) first. Confirm any view matches the
+canonical [.claude/docs/source-of-truth.md](../docs/source-of-truth.md) (correct ledger/stage
+names and data) and flag any divergence.
 
 ## Rules
 

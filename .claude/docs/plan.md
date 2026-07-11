@@ -1,23 +1,173 @@
 # Build Roadmap
 
-The stable milestone sequence for the hackathon. Ordering respects the pipeline: sensing
-before remediation, isolation before publication, and the kill-switch built on the ledger
-it suppresses. Keep **day-to-day status in GitHub issues/board**, not here — this file
-changes only when the plan itself changes (see [Collaboration](collaboration.md)).
+A discrete, phased checklist for the hackathon build. It conforms to
+[source-of-truth.md](source-of-truth.md) (canonical) — thresholds, stage boundaries, and
+ledger fields come from there. PoC bar throughout: **compiles + demo works** (see
+[Build, Run, Test](build-run-test.md)); mock the heavy pieces (real ZK, PoI consensus, live
+P2P, Firecracker, IPFS) and show the flow.
 
-PoC bar throughout: **compiles + demo works** (see [Build, Run, Test](build-run-test.md)).
-Mock the heavy pieces (real ZK, live P2P, Firecracker) and show the flow.
+**How to use this file:** check off `- [ ]` boxes as build tasks land. Owners (A/B/C, see
+[Collaboration](collaboration.md)) mostly edit their own phase's boxes, so completion
+tracking stays low-collision. This tracks coarse build-task completion; fine-grained live
+assignment lives in GitHub issues.
 
-| # | Milestone | Key files | Owner | Done when |
+## Concurrency & dependencies (branch strategy)
+
+Most phases live in disjoint directories (`agents/` vs `evolution/` vs `ledger/` vs
+`landing/`), so they're safe on separate branches at the same time. True dependencies exist
+only at integration points — and each is **decoupled with a mock interface** (the PoC
+approach anyway), so a downstream teammate is never hard-blocked: build against the mock,
+then swap to the real module when it merges.
+
+```
+Wave 0 (blocking, land together):   [0]
+Wave 1 (fully parallel branches):   [1] [2] [3] [4] [5] [10]
+Wave 2 (unlock as deps merge):      [6]←5      [7]←4
+Wave 3 (integration):               [9]←6,3    [8]←6,7
+```
+
+| Phase | Owner | Depends on (hard) | Parallel-safe after P0? | Decouple via |
 |---|---|---|---|---|
-| **M0** | **Scaffolding** — Cargo workspace, Tauri 2 init, Vite/React app, CI skeleton, the module tree as stubs | `Cargo.toml`, `tauri.conf.json`, `landing/package.json`, all `mod.rs` | all (together, first) | `npm run tauri dev` opens the window with an empty dashboard |
-| **M1** | **Scout + Stage 1** — behavioral tracing, state-transition scoring matrix, 100-pt hard interrupt, suspend PID + signal spore | `agents/scout.rs`, `agents/mod.rs`, `core/mod.rs` | A | a scripted "bad" process crosses 100 pts and gets suspended |
-| **M2** | **Soldier lifecycle** — spore serialize/wake/remediate/apoptosis | `agents/soldier.rs` | A | a wake signal spins up a Soldier that acts then re-serializes to spore |
-| **M3** | **Evolution / Stage 2** — MicroVM/Wasm isolation, allele matrix, combinatorial fuzz, Wasm gene compile | `evolution/sandbox.rs`, `evolution/alleles.rs`, `evolution/mod.rs` | B | fuzz finds an allele combo that aborts the target inside the sandbox and emits a gene |
-| **M4** | **Ledger (light client)** — State Ledger Merkle verify, Threat + Genome registries, conjugation transport | `ledger/state.rs`, `ledger/registry.rs`, `ledger/client.rs`, `ledger/mod.rs` | B | a gene hash verifies against a Merkle root via a fetched path |
-| **M5** | **Stages 3 & 4** — Lymph Node regression (allergy check), PoI consensus + ZK commit *(mock ZK + consensus)* | `ledger/`, `evolution/` | A + B | a candidate gene passes the allergy check and a committed record appears |
-| **M6** | **Epigenetic suppression kill-switch** — the emergency brake, built on M4 | `ledger/registry.rs`, `agents/soldier.rs` | B | flipping `Epigenetic_Status = 1` halts a cure *before* fetch/exec (keep the [`suppression-path-test`](../skills/suppression-path-test/SKILL.md) check passing) |
-| **M7** | **Dashboard** — live views wired to Rust event streams | `landing/src/components/*`, `landing/src/hooks/useTauriEvents.js`, `App.jsx` | C | the three views render live state and handle the no-data state |
+| 0 Scaffolding | all | — | must be first | — |
+| 1 Scouts / Stage 1 | A | 0 | ✅ | shared `core` types |
+| 2 Threat Ledger | B | 0 | ✅ | mock `Threat_ID`/schema |
+| 3 Soldier lifecycle | A | 0 | ✅ | mock wake signal |
+| 4 Evolution / Stage 2 | B | 0 | ✅ | mock frozen process |
+| 5 State Ledger | B | 0 | ✅ | self-contained |
+| 6 Genome Ledger | B | 0, **5** | after 5 | mock gene payloads |
+| 7 Stage 3 Lymph Node | A+B | 0, **4** | after 4 (or mock gene) | mock candidate gene |
+| 8 Stage 4 Consensus | A+B | 0, **6**, **7** | after 6+7 | mock proof |
+| 9 Kill-switch | B | 0, **6**, **3** | after 6 | — |
+| 10 Dashboard | C | 0 | ✅ (parallel throughout) | mock event streams |
 
-C works in parallel from M1 onward against mock event streams, then wires to real ones as
-each Rust milestone lands.
+**Merge-risk caveats (beyond Phase 0's shared hotspots):**
+- `ledger/registry.rs` holds **both** the Threat (Phase 2) and Genome (Phase 6) tables —
+  same file, two phases. Sequence them under owner B, or split `registry.rs` into
+  threat/genome sections early so the two branches touch different regions.
+- Phases 1 and 3 are both owner A in `agents/`, but different files (`scout.rs` vs
+  `soldier.rs`) — separate branches are fine.
+- Phase 0's shared hotspots (`main.rs` registration, `Cargo.toml`, `core/mod.rs` types) are
+  why P0 lands together, first, before any branch diverges.
+
+---
+
+## Phase 0 — Scaffolding & Foundations
+**Owner:** all (together, first) · **Depends on:** — · **Parallel-safe:** must be first
+
+- [ ] `cargo tauri init` in `src-tauri/` with pinned Tauri 2 + crate versions
+- [ ] Populate `landing/` deps (React, Vite, `@tauri-apps/api`) + lockfile
+- [ ] Validate `tauri.conf.json` for the sibling `landing/` + `src-tauri/` layout
+- [ ] `.github/` CI: `cargo check` + `cargo build` + frontend build per platform
+- [ ] Whole module tree compiles — `cargo check` green
+- [ ] Shared cross-cutting types in `core/mod.rs` (`Threat_ID`, anomaly score, PID, gene handle)
+
+**Done when:** `npm run tauri dev` opens the window with an empty dashboard.
+
+## Phase 1 — Scout Agents & Stage 1 (Trajectory Scoring)
+**Owner:** A · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** shared `core` types
+
+- [ ] Ultra-light background daemon loop (`agents/scout.rs`)
+- [ ] Behavioral tracing: syscall anomalies, memory-space boundary violations, I/O bursts
+- [ ] State-transition matrix: Action A +20, Action B +50, Action C +40
+- [ ] Per-PID cumulative trajectory score
+- [ ] 100-pt threshold → hard interrupt: suspend all threads of the target PID
+- [ ] Signal the local Soldier spore on threshold cross
+- [ ] Emit `Behavioral_Schema` (syscall/port sequence) for the Threat Registry
+
+**Done when:** a scripted "bad" process crosses 100 pts, is suspended, and the spore is signaled.
+
+## Phase 2 — Threat Registry (Ledger 2)
+**Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock `Threat_ID`/schema
+
+- [ ] `Threat_ID` = cryptographic hash of the behavioral vector
+- [ ] Store `Behavioral_Schema`
+- [ ] `Confidence_Score` integer, incremented on matching trajectory
+- [ ] Correlate an incoming vector to an existing `Threat_ID`
+- [ ] Trigger network-wide mobilization once the confidence threshold is crossed
+
+**Done when:** two matching trajectories increment the score and fire a (mocked) mobilization.
+
+## Phase 3 — Soldier Spore Lifecycle
+**Owner:** A · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock wake signal
+
+- [ ] Soldier at rest = dormant, serialized, un-executed spore on disk
+- [ ] Wake on a high-confidence threat notification (`Threat_ID`)
+- [ ] Clone the frozen process's memory space
+- [ ] Apoptosis: programmed deletion / re-serialize back to a passive spore after acting
+
+**Done when:** a wake signal spins up a Soldier that acts, then re-serializes to a spore.
+
+## Phase 4 — Evolution & Stage 2 (Local Isolation & Fuzzing)
+**Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** mock frozen process
+
+- [ ] MicroVM/Wasm sandbox setup + teardown (`evolution/sandbox.rs`)
+- [ ] Clone the target into the sandbox against a mock host OS
+- [ ] Allele matrix — pre-compiled structural primitives (e.g. `Allele_04`, `Allele_12`)
+- [ ] Combinatorial fuzz driver trying allele combinations
+- [ ] Success criterion: target aborts/crashes without destabilizing the mock host
+- [ ] Compile the winning sequence → Wasm Gene Payload
+- [ ] Isolation guarantee: alleles/genes execute **only** in-sandbox (keep `sandbox-isolation-check` passing)
+
+**Done when:** the fuzz finds a combo that kills the target in-sandbox and emits a Wasm gene.
+
+## Phase 5 — State Ledger (Ledger 1) & Light-Client Verification
+**Owner:** B · **Depends on:** 0 · **Parallel-safe:** ✅ · **Decouple via:** self-contained
+
+- [ ] Block headers, timestamps, validator signatures (`ledger/state.rs`)
+- [ ] Merkle roots of the Threat + Genome registries
+- [ ] Endpoint downloads only the State Ledger
+- [ ] Merkle-path request + verify against the local root
+- [ ] Conjugation transport (P2P/WebSocket), mockable (`ledger/client.rs`)
+
+**Done when:** a gene/threat hash verifies against a Merkle root via a fetched path — no full-chain download.
+
+## Phase 6 — Genome Registry (Ledger 3) & the Pharmacy Flow
+**Owner:** B · **Depends on:** 0, **5** · **Parallel-safe:** after 5 · **Decouple via:** mock gene payloads
+
+- [ ] Mapping `Threat_ID → Wasm_Gene_Hash`
+- [ ] `IPFS_URI` for the compiled gene binary (mock IPFS store OK)
+- [ ] `Epigenetic_Status` flag (0 active / 1 suppressed)
+- [ ] Soldier queries Ledger 3 **on demand** by `Threat_ID` (never a passive scan)
+- [ ] Verify `Wasm_Gene_Hash` against the State Ledger Merkle root before use
+- [ ] Fetch bytecode from IPFS → run in sandbox → apoptosis
+
+**Done when:** a Soldier resolves `Threat_ID` → verified gene → runs in-sandbox → apoptosis.
+
+## Phase 7 — Stage 3 (Lymph Node Regression / Allergy Check)
+**Owner:** A+B · **Depends on:** 0, **4** · **Parallel-safe:** after 4 (or mock gene) · **Decouple via:** mock candidate gene
+
+- [ ] Lymph Node validator environment: standard OS base + Top-5,000 apps (mock subset)
+- [ ] Execute the proposed Wasm mutation in the crowded environment
+- [ ] Detect a whitelisted app crash / memory leak → raise `Allergy Flag` → drop the gene
+
+**Done when:** a gene that breaks a whitelisted app is flagged allergic and dropped.
+
+## Phase 8 — Stage 4 (Consensus & Ledger Commitment)
+**Owner:** A+B · **Depends on:** 0, **6**, **7** · **Parallel-safe:** after 6+7 · **Decouple via:** mock proof
+
+- [ ] Generate a ZK-Proof: gene neutralizes the threat + passed the allergy check, without exposing host/malware (mock)
+- [ ] Validators verify via Proof of Immunity consensus (mock)
+- [ ] Commit the gene to the blockchain (Genome Registry entry + State Ledger root update)
+
+**Done when:** a passing gene produces a (mock) proof, is verified, and a committed record appears.
+
+## Phase 9 — Epigenetic Suppression Kill-Switch
+**Owner:** B · **Depends on:** 0, **6**, **3** · **Parallel-safe:** after 6 · first-class safety
+
+- [ ] Epigenetic Suppressor Token broadcast → set `Epigenetic_Status = 1` on a Gene ID
+- [ ] Soldiers reading Ledger 3 immediately stop executing that cure
+- [ ] Status check happens **before** any gene fetch/exec
+- [ ] Keep [`suppression-path-test`](../skills/suppression-path-test/SKILL.md) passing
+
+**Done when:** flipping `Epigenetic_Status` to 1 halts the cure in seconds, before any fetch/exec.
+
+## Phase 10 — Observability Dashboard
+**Owner:** C · **Depends on:** 0 · **Parallel-safe:** ✅ (parallel throughout) · **Decouple via:** mock event streams
+
+- [ ] Wire `useTauriEvents` to real Rust event streams (mock streams until each phase lands)
+- [ ] `EcosystemGraph` — live process/node map
+- [ ] `LedgerTerminal` — rolling Proof-of-Immunity event log
+- [ ] `StrainTree` — evolutionary phylogeny of strains
+- [ ] Every live view handles the no-data / stream-dropped state
+
+**Done when:** the three views render live state and degrade gracefully when a stream drops.

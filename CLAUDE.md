@@ -32,13 +32,19 @@ The Working Agreement is imported here so it's always in context:
 
 @.claude/docs/working-agreement.md
 
+**The [Source of Truth](.claude/docs/source-of-truth.md) is canonical** — the definitive
+architecture (thresholds, stage boundaries, ledger fields, data flow). Conform to it, and
+run the `source-of-truth-check` skill before finishing any task that touches a stage,
+ledger, or agent. If code, docs, or this file ever conflict with it, it wins.
+
 ## Reference docs
 
 | Doc | What's in it |
 |---|---|
-| [Working Agreement](.claude/docs/working-agreement.md) | The four rules that override convenience — ask don't assume, minimum code, touch only what the task needs, stay honest about uncertainty. |
+| [**Source of Truth**](.claude/docs/source-of-truth.md) | **Canonical** definitive blueprint — the architecture all code conforms to. Read before implementing any stage, ledger, or agent. |
+| [Working Agreement](.claude/docs/working-agreement.md) | The five rules that override convenience — ask don't assume, minimum code, touch only what the task needs, stay honest about uncertainty, conform to the Source of Truth. |
 | [Collaboration](.claude/docs/collaboration.md) | Branching model, who owns which directories, merge-hotspot list. Read before opening a branch. |
-| [Architecture](.claude/docs/architecture.md) | The agent caste system, the four-stage verification pipeline, the three-ledger design, and the kill-switch. |
+| [Architecture](.claude/docs/architecture.md) | Quick orientation map of the four moving parts; defers to the Source of Truth for all specifics. |
 | [File Structure](.claude/docs/file-structure.md) | Where everything lives and the boundary rules between units. |
 | [Tech Stack](.claude/docs/tech-stack.md) | Tauri, Rust, React/Vite, sandboxing, ledger/P2P. |
 | [Build, Run, Test](.claude/docs/build-run-test.md) | The commands and the PoC definition of done. |
@@ -51,8 +57,8 @@ The Working Agreement is imported here so it's always in context:
 
 Advisory reviewers live in [.claude/agents/](.claude/agents/): `security-boundary-auditor`,
 `rust-core-reviewer`, `frontend-observability-dev`. Reusable check procedures live in
-[.claude/skills/](.claude/skills/): `suppression-path-test`, `sandbox-isolation-check`.
-These help; they don't gate.
+[.claude/skills/](.claude/skills/): `source-of-truth-check`, `suppression-path-test`,
+`sandbox-isolation-check`. These help; they don't gate.
 
 ## Working in the frontend
 

@@ -5,10 +5,12 @@ tools: Read, Grep, Glob, Bash
 model: inherit
 ---
 
-You review the Rust backend against [.claude/docs/conventions.md](../docs/conventions.md)
-and [.claude/docs/file-structure.md](../docs/file-structure.md). This is a hackathon PoC,
-so these are guidelines — flag what matters, skip the nitpicks. Report in prose, most
-important first.
+You review the Rust backend against [.claude/docs/conventions.md](../docs/conventions.md),
+[.claude/docs/file-structure.md](../docs/file-structure.md), and the canonical
+[.claude/docs/source-of-truth.md](../docs/source-of-truth.md) — confirm the change conforms
+to the spec (thresholds, stage boundaries, ledger fields) and flag any divergence. This is a
+hackathon PoC, so these are guidelines — flag what matters, skip the nitpicks. Report in
+prose, most important first.
 
 ## What to look for
 
