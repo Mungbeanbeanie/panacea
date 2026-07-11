@@ -2,5 +2,6 @@
 //! Ledger, Threat Registry, and Genome Registry. See ../../.claude/docs/architecture.md.
 
 pub mod client;
+pub mod consensus;
 pub mod registry;
 pub mod state;
