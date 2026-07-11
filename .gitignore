@@ -1,4 +1,5 @@
-
+# Claude local dev setup
+.claude/
 
 # Rust / Cargo
 target/
