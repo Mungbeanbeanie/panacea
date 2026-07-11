@@ -75,10 +75,13 @@ impl ThreatRegistry {
     /// this sighting crossed [`MOBILIZATION_THRESHOLD`].
     pub fn report(&mut self, schema: BehavioralSchema) -> ReportOutcome {
         let threat_id = schema.threat_id();
-        let entry = self.entries.entry(threat_id).or_insert_with(|| ThreatEntry {
-            schema,
-            confidence_score: 0,
-        });
+        let entry = self
+            .entries
+            .entry(threat_id)
+            .or_insert_with(|| ThreatEntry {
+                schema,
+                confidence_score: 0,
+            });
         entry.confidence_score += 1;
         let confidence_score = entry.confidence_score;
 
@@ -121,10 +124,20 @@ mod tests {
         let mut registry = ThreatRegistry::new();
 
         let first = registry.report(vssadmin_trajectory());
-        assert_eq!(first, ReportOutcome::Recorded { confidence_score: 1 });
+        assert_eq!(
+            first,
+            ReportOutcome::Recorded {
+                confidence_score: 1
+            }
+        );
 
         let second = registry.report(vssadmin_trajectory());
-        assert_eq!(second, ReportOutcome::Mobilized { confidence_score: 2 });
+        assert_eq!(
+            second,
+            ReportOutcome::Mobilized {
+                confidence_score: 2
+            }
+        );
 
         let entry = registry.get(&vssadmin_trajectory().threat_id()).unwrap();
         assert_eq!(entry.confidence_score, 2);

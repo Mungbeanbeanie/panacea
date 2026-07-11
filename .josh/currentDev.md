@@ -1,266 +1,238 @@
-# Current Dev Plan — Phase 1, Steps 2–7 (rest of Phase 1)
+# Current Dev Plan — Phase 3 (Soldier Spore Lifecycle)
 
 > Scratch planning doc only (`.josh/` is gitignored). Nothing here is implemented until the
 > user says **"implement"**. Conforms to `.claude/docs/source-of-truth.md` (canonical) and
-> the Working Agreement. Owner: **A** (`agents/`, `core/`).
+> the Working Agreement. Owner: **A** (`agents/`). Depends on Phase 0; decouples from Phase 1
+> via the **mock wake signal**.
 
 ## Scope
 
-The remaining Phase-1 boxes (`.claude/docs/plan.md:70–75`); Step 1 (the daemon loop) is done:
+All of **Phase 3** (`.claude/docs/plan.md:93–96`):
 
-- [ ] **2 — Behavioral tracing** (syscall anomalies, memory-boundary violations, I/O bursts)
-- [ ] **3 — State-transition matrix** (Action A +20, B +50, C +40)
-- [ ] **4 — Per-PID cumulative trajectory score**
-- [ ] **5 — 100-pt threshold → hard interrupt: suspend all threads of the target PID**
-- [ ] **6 — Signal the local Soldier spore on threshold cross**
-- [ ] **7 — Emit `Behavioral_Schema` (syscall/port sequence) for the Threat Registry**
+- [ ] **1 — Soldier at rest = dormant, serialized, un-executed spore on disk**
+- [ ] **2 — Wake on a high-confidence threat notification (`Threat_ID`)**
+- [ ] **3 — Clone the frozen process's memory space**
+- [ ] **4 — Apoptosis: programmed deletion / re-serialize back to a passive spore after acting**
 
-**Done when (whole phase):** a scripted "bad" process crosses 100 pts, is suspended, and the
-spore is signaled.
+**Done when:** a wake signal spins up a Soldier that acts, then re-serializes to a spore.
 
-These six steps are one cohesive change: the Step-1 inert loop becomes a stateful Stage-1
-scorer. I'll plan them together but keep each box's logic in its own small function so the
-diff maps to the checklist.
+This phase builds the Soldier **lifecycle envelope** only. The actual remediation mechanism
+(sandbox + evolutionary fuzz = Phase 4; verified gene fetch/exec = Phase 6) is a **mocked
+seam** here — modeled honestly as a stub `neutralize`, not faked as a real kill.
 
 ## Baseline (verified this session)
 
-- `agents/scout.rs` has `spawn()` running `loop { tick(); sleep(500ms) }`; `tick()` is a
-  no-op. Wired from `main.rs` `.setup(...)`.
-- `core`: `Pid = u32`, `AnomalyScore(u32)` (derives `Ord`), `ANOMALY_THRESHOLD =
-  AnomalyScore(100)`, `ThreatId([u8;32])`, `GeneHandle([u8;32])`.
-- `soldier.rs`, `ledger/registry.rs` are doc-comment stubs (Phases 3 & 2, owners A & B).
-- `Cargo.toml`: `tauri 2.11.5`, `serde`, `serde_json`. **No hashing or process-signal crate.**
-- `cargo check` green (5 pre-existing `dead_code` warnings on `core` types — those go away as
-  Phase 1 starts consuming them).
+- `agents/soldier.rs` is a doc-comment stub — no code.
+- `agents::WakeSignal { threat_id: ThreatId, pid: Pid }` already exists (Phase 1) — this is
+  the exact "mock wake signal" Phase 3 consumes.
+- Phase 1's `scout::spawn_demo()` currently wires the Scout's `wake_tx` to a **stub consumer
+  that just logs**. Phase 3 replaces that stub with the real Soldier (integration step below).
+- `serde` + `serde_json` are already deps → spore (de)serialization needs **no new crate**.
+  File I/O and the process snapshot use `std` / a `ps` shell-out (same pattern as Phase 1).
+- `cargo check` green (1 pre-existing `GeneHandle` warning, unused until Phase 6).
 
 ---
 
 ## Key decisions (flagged, Rule 1 / Rule 4 / security.md) — confirm at implement
 
-### D1 — How the Scout observes: scripted feed, not real syscall tracing
-Real cross-platform syscall/ESF/eBPF tracing is the classic "heavy piece" to mock
-(CLAUDE.md), and the Source-of-Truth actions are Windows-specific (`vssadmin.exe` / Volume
-Shadow Copy) — not observable on this macOS dev box. **Plan:** a `BehaviorSource` trait with
-a PoC `ScriptedSource` that emits a preset Action A→B→C sequence for a target PID. The
-Scout's scoring/threshold/suspension logic is **real**; only the sensor is mocked, behind a
-clean seam a real tracer swaps into later. *This is faithful modeling, not faking.*
+### D1 — Memory-space cloning is mocked (privileged operation)
+Real cross-process memory cloning needs `task_for_pid`/`ptrace` (root or a signed
+entitlement on macOS) — a classic "heavy piece" to mock (CLAUDE.md). **Plan:** capture a
+lightweight *snapshot* of the frozen target (its PID + resident size via `ps -o rss=`) as a
+`MemoryClone` stand-in. Faithful to the lifecycle (the Soldier produces a clone artifact the
+Phase-4 sandbox will consume) without faking a full memory dump. Flagged, not silently faked.
 
-### D2 — Suspension is REAL on a process we spawn (recommended)
-For a convincing demo, `ScriptedSource` spawns a benign helper (e.g. `sleep 600`), targets
-its **real PID**, and on threshold the Scout genuinely `SIGSTOP`s it (observable as a stopped
-process). Behavioral events are scripted; the freeze is real.
-- **Safety guardrails (security.md — suspension is a real side effect):** refuse to suspend
-  our own PID or any PID below a floor (`PID_FLOOR`), so the demo can never freeze a
-  system/critical process. Only PIDs the Scout is actively scoring can be suspended.
-- **Alternative:** fully in-memory simulation (suspension = a state flag). Less compelling;
-  recommend the real path with guards.
+### D2 — `neutralize` is a logged mock, not a real kill
+The Soldier's real kill path is an evolved Wasm gene executed **inside the sandbox**
+(Phase 4/6). Phase 3 must not bypass that boundary (security.md). **Plan:** `neutralize()`
+logs a mock "neutralized" and does **not** kill anything. The Phase-4/6 remediation plugs in
+here later.
+- ⚠️ **Decision:** for a cleaner demo, should apoptosis also `SIGCONT` + terminate the
+  Phase-1 helper that was left suspended (labeled explicitly as *demo cleanup*, not "the gene
+  killed it")? **Recommend yes** — otherwise the scripted target stays frozen until app exit.
+  It's an honest cleanup step, clearly not the real remediation mechanism.
 
-### D3 — New dependencies (versions from the registry at implement time, Rule 4)
-- **`sha2`** (all platforms) — `Threat_ID` = SHA-256 of the behavioral vector → `[u8;32]`,
-  matching `ThreatId`.
-- **`nix`** (feature `signal`) — `SIGSTOP` for the hard interrupt. **Unix-only**, so it goes
-  under `[target.'cfg(unix)'.dependencies]` and `suspend()` is `#[cfg(unix)]`-gated with a
-  `#[cfg(not(unix))]` stub. ⚠️ **This keeps the 3-OS CI matrix green** — an unconditional
-  `nix` dep would break the Windows job. PoC targets macOS/Linux; Windows suspension
-  (`NtSuspendProcess`) is out of scope, stubbed.
+### D3 — Spore persistence path
+The dormant spore is a serialized file. **Plan:** default to
+`std::env::temp_dir().join("bio-digital-defense.spore")`; the lifecycle functions take a
+`&Path` so tests use their own temp file. Could later move to Tauri's app-data dir
+(`AppHandle::path()`), but that adds a Tauri coupling not needed now (Rule 2). Flagged.
 
-### D4 — Mock boundaries to Phase 2 & Phase 3 (don't edit owners B's files)
-The Scout emits *outward* to the Threat Registry (Ledger 2, Phase 2, owner B) and the Soldier
-(Phase 3, owner A). Per the decouple strategy, the Scout pushes to **`std::sync::mpsc`
-channels**; the PoC wires stub consumers that log. Phase 2/3 replace the consumers later.
-This means **Phase 1 does not touch `ledger/`** (Rule 3 / ownership).
+### D4 — Integration: rewire `spawn_demo`, or stand alone?
+Phase 3 is decouple-testable against a **mock** `WakeSignal` (no Phase 1 needed). For the
+full Scout→Soldier demo, replace the stub wake consumer in `scout::spawn_demo()` with
+`soldier::run(wake_rx, path)`. That edits a Phase-1 demo fn, but it's **owner A's file**, so
+in-bounds. **Recommend** doing the rewire so the end-to-end chain is visible; the core Soldier
+API is independently unit-tested with a mock signal regardless.
+
+### D5 — Apoptosis mode
+SoT allows "programmed deletion **or** re-serialization to a passive spore." **Plan:**
+re-serialize (the loop-friendly mode: the Soldier returns to dormancy ready for the next
+threat, incrementing a `generation` counter to show it cycled). Deletion is the alternative;
+re-serialization is the better demo. Flagged.
 
 ---
 
-## Per-step design & sketches (not yet applied)
+## Per-step design & sketches → `agents/soldier.rs` (not yet applied)
 
-### Shared types → `core/mod.rs` (Step 2 & 7 vocabulary)
-`core` is the shared home so Ledger 2 (owner B) can adopt `BehavioralSchema` later without
-reaching into `agents/`. ⚠️ `core/mod.rs` is a merge hotspot — append, grouped.
+Zero new dependencies. Reuses `agents::WakeSignal` and `core::{ThreatId, Pid}`.
 
 ```rust
-/// One anomalous behavioral action observed for a process in Stage 1.
+use std::path::Path;
+use std::sync::mpsc::Receiver;
+use std::thread::{self, JoinHandle};
+
+use serde::{Deserialize, Serialize};
+
+use super::WakeSignal;
+use crate::core::Pid;
+
+/// Step 1 — a Soldier at rest: dormant, serialized, un-executed state on disk.
 ///
-/// The PoC vocabulary standing in for real syscall/network/I-O traces; each variant maps to
-/// a Source-of-Truth Stage-1 action (weights in `scout::weight`). Fieldless so it hashes to a
-/// stable byte in the Threat_ID digest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Action {
-    /// Spawns a hidden child process from a Temp directory (Source of Truth: Action A).
-    HiddenChildFromTemp = 0,
-    /// Enumerates network adapters while tampering with the Volume Shadow Copy service
-    /// (Source of Truth: Action B).
-    NetEnumWithVssTamper = 1,
-    /// Rapidly loops file handles reading/writing high-entropy data (Source of Truth: Action C).
-    HighEntropyFileLoop = 2,
+/// The "payload" is modeled as serialized lifecycle state (a generation counter), not literal
+/// executable bytes — the Rust code lives in the binary; the spore models the *dormant,
+/// resource-free* form the Soldier collapses back to between threats.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Spore {
+    /// How many times this spore has woken and re-serialized (0 = never fired).
+    generation: u64,
 }
 
-/// `Behavioral_Schema` — the ordered action sequence flagged for one process (Ledger 2's
-/// behavioral vector, i.e. the "sequence of syscalls and network ports"). Hashing it yields
-/// the [`ThreatId`]; two Scouts observing the same sequence agree on the id.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BehavioralSchema {
-    pub actions: Vec<Action>,
-}
-```
+impl Spore {
+    /// A never-woken spore.
+    fn dormant() -> Self { Self { generation: 0 } }
 
-*Note:* the three tracing **categories** in Step 2 (syscall / memory-boundary / I-O) are the
-observation classes the source models; A/B/C are the concrete demo instances that carry the
-exact spec weights. I deliberately do **not** invent a 4th weighted action (Rule 4 — spec
-lists only three).
+    /// Load the spore from disk, or start dormant if none exists yet.
+    fn load_or_dormant(path: &Path) -> Self {
+        std::fs::read(path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_else(Self::dormant)
+    }
 
-### Agent lifecycle types → `agents/mod.rs` (Step 6 & 7 boundaries)
-```rust
-use crate::core::{BehavioralSchema, Pid, ThreatId};
-
-/// Scout → Soldier wake notification (Phase 3 consumes this; mocked until then).
-#[derive(Debug, Clone)]
-pub struct WakeSignal { pub threat_id: ThreatId, pub pid: Pid }
-
-/// Scout → Threat Registry (Ledger 2) submission (Phase 2 consumes this; mocked until then).
-#[derive(Debug, Clone)]
-pub struct ThreatReport { pub threat_id: ThreatId, pub schema: BehavioralSchema }
-```
-
-### The scorer → `agents/scout.rs` (Steps 2–7 logic)
-Replaces the inert `tick()` with a stateful `Scout`. Each checklist box = one small piece:
-
-```rust
-use super::{ThreatReport, WakeSignal};
-use crate::core::{Action, AnomalyScore, BehavioralSchema, Pid, ThreatId, ANOMALY_THRESHOLD};
-use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::sync::mpsc::Sender;
-
-/// Lowest PID the Scout will ever suspend — guards system/critical processes (security.md).
-const PID_FLOOR: Pid = 1000;
-
-/// Step 3 — weight one action contributes to a trajectory (Source of Truth, Stage 1).
-fn weight(action: Action) -> AnomalyScore {
-    match action {
-        Action::HiddenChildFromTemp => AnomalyScore(20),
-        Action::NetEnumWithVssTamper => AnomalyScore(50),
-        Action::HighEntropyFileLoop => AnomalyScore(40),
+    /// Serialize the passive spore back to disk (apoptosis end-state).
+    fn save(&self, path: &Path) -> std::io::Result<()> {
+        std::fs::write(path, serde_json::to_vec(self)?)
     }
 }
 
-/// One process's accumulating Stage-1 trajectory (Step 4 state).
-struct Trajectory { score: AnomalyScore, actions: Vec<Action>, fired: bool }
-
-/// Step 2 — a single observation: process `pid` performed `action`.
-pub struct Observation { pub pid: Pid, pub action: Action }
-
-/// Step 2 — source of behavioral observations. PoC = scripted feed; a real tracer implements
-/// the same trait later.
-pub trait BehaviorSource: Send {
-    fn poll(&mut self) -> Vec<Observation>;
+/// Step 3 — a mock snapshot of the frozen target's memory space (real cloning is privileged).
+/// The artifact the Phase-4 sandbox will later replicate and fuzz against.
+#[derive(Debug, Clone)]
+pub struct MemoryClone {
+    pid: Pid,
+    rss_kib: u64,
 }
 
-/// The Stage-1 scoring daemon. Owns per-PID trajectories and the outbound mock channels.
-pub struct Scout<S: BehaviorSource> {
-    source: S,
-    scores: HashMap<Pid, Trajectory>,
-    wake_tx: Sender<WakeSignal>,      // Step 6 → Soldier (mock)
-    threat_tx: Sender<ThreatReport>,  // Step 7 → Ledger 2 (mock)
+/// An awakened Soldier: transient, holds the threat it's acting on and its memory clone.
+pub struct Soldier {
+    pid: Pid,
+    clone: MemoryClone,
+    generation: u64,
 }
 
-impl<S: BehaviorSource + 'static> Scout<S> {
-    pub fn new(source: S, wake_tx: Sender<WakeSignal>, threat_tx: Sender<ThreatReport>) -> Self { /* … */ }
-
-    /// Consume self, run the ultra-light loop on a background thread.
-    pub fn spawn(mut self) -> JoinHandle<()> {
-        thread::spawn(move || loop { self.tick(); thread::sleep(TICK_INTERVAL); })
+impl Soldier {
+    /// Step 2 — wake from a dormant spore on a `Threat_ID` notification, cloning the target.
+    fn wake(spore: Spore, signal: &WakeSignal) -> Self {
+        let clone = clone_memory(signal.pid);
+        Soldier { pid: signal.pid, clone, generation: spore.generation }
     }
 
-    fn tick(&mut self) {
-        for Observation { pid, action } in self.source.poll() {
-            let t = self.scores.entry(pid).or_insert_with(Trajectory::new);
-            if t.fired { continue; }                 // suspend once, don't re-fire
-            t.score = AnomalyScore(t.score.0 + weight(action).0);  // Step 3+4
-            t.actions.push(action);
-            if t.score >= ANOMALY_THRESHOLD {         // Step 5 trigger (Ord on AnomalyScore)
-                t.fired = true;
-                let schema = BehavioralSchema { actions: t.actions.clone() };
-                let id = threat_id(&schema);
-                suspend(pid);                                              // Step 5
-                let _ = self.wake_tx.send(WakeSignal { threat_id: id, pid });          // Step 6
-                let _ = self.threat_tx.send(ThreatReport { threat_id: id, schema });   // Step 7
+    /// Remediation seam. Phase 4 (sandbox+fuzz) / Phase 6 (verified gene) plug in here; the
+    /// Epigenetic_Status check (Phase 9) goes *before* any gene fetch/exec at that point.
+    /// Mocked now: logs only, kills nothing.
+    fn neutralize(&self) {
+        println!("[soldier] neutralize (mock) pid {} rss {} KiB", self.clone.pid, self.clone.rss_kib);
+    }
+
+    /// Step 4 — apoptosis: re-serialize to a passive spore (generation+1), then drop self.
+    fn apoptosis(self, path: &Path) -> std::io::Result<Spore> {
+        let next = Spore { generation: self.generation + 1 };
+        next.save(path)?;
+        Ok(next)
+    }
+}
+
+/// Step 3 — clone the frozen process's memory space (mock: PID + resident size via `ps`).
+fn clone_memory(pid: Pid) -> MemoryClone {
+    let rss_kib = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    MemoryClone { pid, rss_kib }
+}
+
+/// Full lifecycle for one wake: load spore → wake+clone → act → apoptosis (re-serialize).
+pub fn handle_wake(signal: &WakeSignal, spore_path: &Path) -> std::io::Result<Spore> {
+    let spore = Spore::load_or_dormant(spore_path);
+    let soldier = Soldier::wake(spore, signal);
+    soldier.neutralize();
+    soldier.apoptosis(spore_path)
+}
+
+/// Run the Soldier as the consumer of the Scout's wake channel (replaces the Phase-1 stub).
+pub fn run(wake_rx: Receiver<WakeSignal>, spore_path: std::path::PathBuf) -> JoinHandle<()> {
+    thread::spawn(move || {
+        for signal in wake_rx {
+            if let Err(e) = handle_wake(&signal, &spore_path) {
+                eprintln!("[soldier] apoptosis failed: {e}");
             }
         }
-    }
+    })
 }
-
-/// Step 7 — Threat_ID = SHA-256 over the ordered action bytes (deterministic; no serde-format
-/// dependency, so any node computes the same id from the same sequence).
-fn threat_id(schema: &BehavioralSchema) -> ThreatId {
-    let mut h = Sha256::new();
-    for a in &schema.actions { h.update([*a as u8]); }
-    let out = h.finalize();
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&out);   // avoids relying on GenericArray→[u8;32] Into (verify sha2 API)
-    ThreatId(bytes)
-}
-
-/// Step 5 — suspend all threads of `pid` (Stage-1 hard interrupt). Guards self/system PIDs.
-#[cfg(unix)]
-fn suspend(pid: Pid) {
-    if pid == std::process::id() || pid < PID_FLOOR { return; }
-    use nix::sys::signal::{kill, Signal};
-    let _ = kill(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGSTOP);
-}
-#[cfg(not(unix))]
-fn suspend(_pid: Pid) { /* PoC targets Unix; Windows suspension out of scope */ }
 ```
 
-### Demo harness + launch (Step D2 wiring)
-To keep `main.rs` (hotspot) a one-liner, encapsulate the PoC wiring in `scout::spawn_demo()`:
-it spawns the helper target, builds the `ScriptedSource`, creates the two channels, starts
-stub consumers that `println!` what the Scout emits, and returns the `JoinHandle`.
+### Integration edit (D4) → `agents/scout.rs` `spawn_demo`
+Replace the stub `wake_rx` logging thread with the real Soldier consumer:
 
 ```rust
-// scout.rs
-/// PoC harness: scripted A→B→C feed against a real spawned helper PID, with stub Soldier /
-/// Ledger-2 consumers. The demo entry point Step 1's `spawn()` becomes.
-pub fn spawn_demo() -> JoinHandle<()> { /* channels + stub threads + ScriptedSource + Scout::new().spawn() */ }
+// was: thread::spawn(move || for sig in wake_rx { println!("[soldier] wake …") });
+let spore_path = std::env::temp_dir().join("bio-digital-defense.spore");
+super::soldier::run(wake_rx, spore_path);
 ```
-
-`main.rs` `.setup` changes one line: `agents::scout::spawn()` → `agents::scout::spawn_demo()`.
 
 ---
 
 ## Explicitly out of scope (Rule 3)
-- **Threat Registry storage / correlation / Confidence_Score** — Phase 2 (owner B). We only
-  *emit* a `ThreatReport`.
-- **Soldier wake/clone/apoptosis** — Phase 3. We only *send* a `WakeSignal`.
-- **Dashboard events** — Phase 10. The Scout emits nothing to the UI here.
-- **`IPFS_URI`, `Epigenetic_Status`, genes, sandbox** — later phases.
+- **Sandbox setup + evolutionary fuzz** — Phase 4 (owner B, `evolution/`). `neutralize` is the
+  seam, mocked.
+- **Gene fetch from IPFS + Merkle verification + execution** — Phase 6.
+- **Epigenetic_Status kill-switch check** — Phase 9. Phase 3 executes **no gene**, so there is
+  nothing to suppress yet; the check belongs *before* the Phase-6 fetch/exec. Noted in
+  `neutralize`'s doc as the seam. (⇒ `suppression-path-test` is **not** triggered by Phase 3.)
+- **Threat Registry / Confidence_Score** — Phase 2 (owner B). We only *consume* a `WakeSignal`.
+- **Real memory dump, real kill** — mocked per D1/D2.
 
 ## Source-of-truth conformance (pre-check)
-- **Weights exactly** +20 / +50 / +40; **threshold 100** (from `core`, untouched). ✅
-- **Caste boundary:** Scout observes, scores, **suspends** (`SIGSTOP` = suspend, not kill),
-  and signals — it does **not** terminate or remediate. Matches "suspends all threads of the
-  target PID." ✅
-- **Threat_ID** = cryptographic hash of the behavioral vector (SHA-256 of the schema). ✅
-- **Behavioral_Schema** = ordered syscall/action sequence. ✅
-- **Wake signal carries `Threat_ID`** — matches Phase 3 ("wake on a Threat_ID"). ✅
-- Run the **`source-of-truth-check`** skill before done.
+- **Dormant un-executed spore on disk:** `Spore` serialized to a file; not running, resource-
+  free. ✅
+- **Wakes on a `Threat_ID` notification:** driven by `WakeSignal` (carries `threat_id`). ✅
+- **Clones the frozen process's memory space:** `MemoryClone` snapshot of the suspended PID
+  (mock, flagged). ✅
+- **Apoptosis = re-serialize to a passive spore:** `apoptosis()` writes the spore, drops the
+  active Soldier. ✅
+- **Caste boundary:** the Soldier is the *executioner*, but its real kill is a sandboxed gene
+  (Phase 4/6); Phase 3 mocks that step rather than killing on the host — no sandbox-boundary
+  or Epigenetic violation. ✅
+- Run **`source-of-truth-check`** before done.
 
 ## Definition of done for this batch
-- Scout accumulates per-PID scores from scripted A/B/C, crosses 100, **suspends the real
-  target PID once**, sends a `WakeSignal` and a `ThreatReport` (both observed via stub logs).
-- New deps (`sha2`; `nix` unix-only) added from the registry; `cargo check` green on the
-  Unix host; Windows path compiles via the stub.
-- `cargo fmt` applied; a unit test covering scoring → threshold → single-fire → emissions
-  (suspension exercised in the demo, not the unit test, to avoid `SIGSTOP` in CI).
-- Honest report: was the app actually run (`tauri dev`) and the freeze observed, or only
-  `cargo check`?
+- `soldier.rs` exposes the `Spore`/`Soldier` lifecycle + `handle_wake` + `run`.
+- A unit/integration test feeds a **mock `WakeSignal`** to `handle_wake` against a temp path
+  and asserts: spore file exists afterward, `generation` incremented (dormancy → 1), a
+  `MemoryClone` was produced. (Decoupled — no Phase 1 needed.)
+- (If D4 accepted) `spawn_demo` rewired so the live Scout→Soldier chain runs; optionally an
+  `#[ignore]`d end-to-end test asserting a real wake produces a spore file.
+- `cargo check` + `cargo fmt` clean; `cargo test` green.
+- Honest report on what was actually run vs. only compiled.
 
 ## Open questions for the user (answer at "implement")
-- **Q1 — suspension:** real `SIGSTOP` on a spawned helper with PID guards (recommended), or
-  fully simulated?
-- **Q2 — dependencies:** OK to add `sha2` and (unix-only) `nix`? Prefer `blake3` over `sha2`,
-  or a different signal crate (`libc`) over `nix`?
-- **Q3 — type homes:** `Action` + `BehavioralSchema` in `core/mod.rs` (recommended, shared
-  with Ledger 2), or keep them in `agents/` for now?
-- **Q4 — test depth:** unit test for the scoring/threshold/emit path is enough, or do you
-  want an end-to-end test that spawns a helper and asserts it actually reaches stopped state?
+- **Q1 — demo cleanup (D2):** have apoptosis `SIGCONT`+terminate the suspended helper as
+  labeled demo cleanup (recommended), or leave `neutralize` purely a log?
+- **Q2 — integration (D4):** rewire `spawn_demo` to the real Soldier now (recommended), or
+  keep Phase 3 standalone/mock-tested only?
+- **Q3 — spore path (D3):** OS temp dir (recommended) or Tauri app-data dir?
+- **Q4 — apoptosis mode (D5):** re-serialize with a generation counter (recommended), or model
+  programmed deletion?

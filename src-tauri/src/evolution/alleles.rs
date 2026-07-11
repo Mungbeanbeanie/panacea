@@ -79,15 +79,22 @@ mod tests {
 
     #[test]
     fn fuzz_finds_the_safe_kill_combo() {
-        let mut sandbox = Sandbox::spawn(FrozenProcess { pid: 1, memory: vec![] });
+        let mut sandbox = Sandbox::spawn(FrozenProcess {
+            pid: 1,
+            memory: vec![],
+        });
         let gene = fuzz(&mut sandbox).expect("fuzz driver should find a winning combo");
         assert_eq!(gene.sequence, vec![Allele::Allele04, Allele::Allele12]);
     }
 
     #[test]
     fn same_sequence_hashes_identically() {
-        let a = GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] };
-        let b = GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] };
+        let a = GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        };
+        let b = GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        };
         assert_eq!(a.gene_hash(), b.gene_hash());
     }
 }

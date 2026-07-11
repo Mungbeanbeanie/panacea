@@ -202,14 +202,10 @@ pub fn spawn_demo() -> JoinHandle<()> {
     let (wake_tx, wake_rx) = channel::<WakeSignal>();
     let (threat_tx, threat_rx) = channel::<ThreatReport>();
 
-    thread::spawn(move || {
-        for signal in wake_rx {
-            println!(
-                "[soldier] wake for pid {} threat_id={:02x?}",
-                signal.pid, signal.threat_id.0
-            );
-        }
-    });
+    // Real Soldier consumes the wake channel (Phase 3): each threshold cross spins up a
+    // Soldier that acts and re-serializes to a spore.
+    let spore_path = std::env::temp_dir().join("bio-digital-defense.spore");
+    super::soldier::run(wake_rx, spore_path);
     thread::spawn(move || {
         for report in threat_rx {
             println!(
@@ -222,7 +218,8 @@ pub fn spawn_demo() -> JoinHandle<()> {
 
     let (source, child) =
         ScriptedSource::spawn_target().expect("failed to spawn scripted target process");
-    // Detached helper: it stays alive (suspended once flagged) and is reaped on app exit.
+    // Drop the helper handle: the Scout suspends it on threshold cross and the Soldier
+    // releases and terminates it during apoptosis; any residue is reaped on app exit.
     drop(child);
 
     Scout::new(source, wake_tx, threat_tx).spawn()

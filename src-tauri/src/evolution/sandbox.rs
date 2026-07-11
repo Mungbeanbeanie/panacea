@@ -71,7 +71,10 @@ mod tests {
     use super::*;
 
     fn mock_target() -> FrozenProcess {
-        FrozenProcess { pid: 4242, memory: vec![0xAA; 16] }
+        FrozenProcess {
+            pid: 4242,
+            memory: vec![0xAA; 16],
+        }
     }
 
     #[test]
@@ -84,7 +87,10 @@ mod tests {
     #[test]
     fn lone_allele_is_not_enough() {
         let mut sandbox = Sandbox::spawn(mock_target());
-        assert_eq!(sandbox.run(&[Allele::Allele04]), TrialOutcome::TargetSurvived);
+        assert_eq!(
+            sandbox.run(&[Allele::Allele04]),
+            TrialOutcome::TargetSurvived
+        );
     }
 
     #[test]

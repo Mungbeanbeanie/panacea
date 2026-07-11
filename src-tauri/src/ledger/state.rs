@@ -92,7 +92,11 @@ impl MerkleTree {
         for level in &self.levels[..self.levels.len() - 1] {
             let sibling_index = index ^ 1;
             let sibling = level.get(sibling_index).copied().unwrap_or(level[index]);
-            let side = if sibling_index < index { Side::Left } else { Side::Right };
+            let side = if sibling_index < index {
+                Side::Left
+            } else {
+                Side::Right
+            };
             steps.push((side, sibling));
             index /= 2;
         }
@@ -136,13 +140,15 @@ impl StateLedger {
 
     /// Verifies a Threat Registry row hash against the latest committed `threat_root`.
     pub fn verify_threat(&self, leaf: Hash, proof: &MerkleProof) -> bool {
-        self.latest().is_some_and(|h| proof.verify(leaf, h.threat_root))
+        self.latest()
+            .is_some_and(|h| proof.verify(leaf, h.threat_root))
     }
 
     /// Verifies a Genome Registry row hash (a `Wasm_Gene_Hash`) against the latest
     /// committed `genome_root`.
     pub fn verify_gene(&self, leaf: Hash, proof: &MerkleProof) -> bool {
-        self.latest().is_some_and(|h| proof.verify(leaf, h.genome_root))
+        self.latest()
+            .is_some_and(|h| proof.verify(leaf, h.genome_root))
     }
 }
 
