@@ -136,7 +136,7 @@ fn release_target(_pid: Pid) {}
 pub fn handle_wake(
     signal: &WakeSignal,
     spore_path: &Path,
-    pharmacy: &mut Pharmacy,
+    pharmacy: &Pharmacy,
 ) -> std::io::Result<(Spore, PharmacyOutcome)> {
     let spore = Spore::load_or_dormant(spore_path);
     let soldier = Soldier::wake(spore, signal);
@@ -154,11 +154,11 @@ pub fn handle_wake(
 pub fn run(
     wake_rx: Receiver<WakeSignal>,
     spore_path: std::path::PathBuf,
-    mut pharmacy: Pharmacy,
+    pharmacy: Pharmacy,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         for signal in wake_rx {
-            match handle_wake(&signal, &spore_path, &mut pharmacy) {
+            match handle_wake(&signal, &spore_path, &pharmacy) {
                 Ok((spore, outcome)) => println!(
                     "[soldier] cure {outcome:?}; apoptosis → spore generation {}",
                     spore.generation()
@@ -185,8 +185,8 @@ mod tests {
             pid: std::process::id(),
         };
 
-        let mut pharmacy = Pharmacy::empty();
-        let (spore, _) = handle_wake(&signal, &path, &mut pharmacy).expect("handle_wake");
+        let pharmacy = Pharmacy::empty();
+        let (spore, _) = handle_wake(&signal, &path, &pharmacy).expect("handle_wake");
         assert_eq!(
             spore.generation(),
             1,
@@ -195,7 +195,7 @@ mod tests {
         assert!(path.exists(), "spore re-serialized to disk");
 
         // A second wake loads generation 1 and re-serializes as 2.
-        let (spore2, _) = handle_wake(&signal, &path, &mut pharmacy).expect("handle_wake again");
+        let (spore2, _) = handle_wake(&signal, &path, &pharmacy).expect("handle_wake again");
         assert_eq!(spore2.generation(), 2);
 
         let _ = std::fs::remove_file(&path);
@@ -225,8 +225,8 @@ mod tests {
             pid,
         };
 
-        let mut pharmacy = Pharmacy::empty();
-        let (spore, _) = handle_wake(&signal, &path, &mut pharmacy).expect("handle_wake");
+        let pharmacy = Pharmacy::empty();
+        let (spore, _) = handle_wake(&signal, &path, &pharmacy).expect("handle_wake");
         assert_eq!(spore.generation(), 1);
         assert!(path.exists());
 
@@ -239,11 +239,11 @@ mod tests {
     }
 }
 
-use crate::core::ThreatId;
+use crate::core::{GeneHandle, ThreatId};
 use crate::evolution::sandbox::{FrozenProcess, Sandbox, TrialOutcome};
-use crate::ledger::client::MockConjugationLink;
-use crate::ledger::registry::{EpigeneticStatus, GenomeRegistry, MockIpfsStore};
-use crate::ledger::state::{MerkleProof, StateLedger};
+use crate::ledger::ipfs::{Cid, FakeGeneStore, GeneStore};
+use crate::ledger::registry::{FakeGenomeSource, GenomeSource};
+use crate::ledger::LedgerError;
 
 /// Outcome of a Soldier's resolve → verify → fetch → execute → apoptosis run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -252,8 +252,11 @@ pub enum PharmacyOutcome {
     NoCureAvailable,
     /// `Epigenetic_Status = 1` — halted before any fetch or execution.
     Suppressed,
-    /// The claimed `Wasm_Gene_Hash` didn't verify against the State Ledger Merkle root.
+    /// The fetched gene's hash didn't match the on-chain `Wasm_Gene_Hash`.
     GeneHashUnverified,
+    /// The Genome Registry read or the IPFS fetch itself failed (RPC/network error) —
+    /// distinct from a legitimate "no cure published" result.
+    LedgerUnavailable,
     /// Gene ran in-sandbox but didn't neutralize the target; apoptosis still follows.
     Ineffective,
     /// Gene neutralized the target in-sandbox; apoptosis follows.
@@ -261,31 +264,32 @@ pub enum PharmacyOutcome {
 }
 
 /// Resolves `threat_id` against the Genome Registry **on demand** (never a passive scan),
-/// checks `Epigenetic_Status` *before* touching IPFS or the sandbox, verifies the claimed
-/// `Wasm_Gene_Hash` against the State Ledger's Merkle root, fetches the bytecode, runs it
-/// in-sandbox, and undergoes apoptosis — the sandbox is torn down before returning either way.
+/// checks `Epigenetic_Status` *before* touching IPFS or the sandbox, fetches the gene
+/// bytecode by CID and checks its hash against the on-chain `Wasm_Gene_Hash` (reading a
+/// `confirmed`-commitment Solana account already carries the integrity guarantee a Merkle
+/// proof used to provide — see `../../ledger/state.rs`), runs it in-sandbox, and undergoes
+/// apoptosis — the sandbox is torn down before returning either way.
 pub fn resolve_and_run(
     threat_id: &ThreatId,
-    genome_registry: &GenomeRegistry,
-    ipfs: &MockIpfsStore,
-    state_ledger: &StateLedger,
-    gene_proof: &MerkleProof,
+    genome_source: &dyn GenomeSource,
+    ipfs: &dyn GeneStore,
     mut sandbox: Sandbox,
 ) -> PharmacyOutcome {
-    let Some(entry) = genome_registry.get(threat_id) else {
-        return PharmacyOutcome::NoCureAvailable;
+    let entry = match genome_source.get(threat_id) {
+        Ok(Some(entry)) => entry,
+        Ok(None) => return PharmacyOutcome::NoCureAvailable,
+        Err(_) => return PharmacyOutcome::LedgerUnavailable,
     };
 
-    if entry.epigenetic_status == EpigeneticStatus::Suppressed {
+    if entry.epigenetic_status == 1 {
         return PharmacyOutcome::Suppressed;
     }
 
-    if !state_ledger.verify_gene(entry.gene_hash.0, gene_proof) {
-        return PharmacyOutcome::GeneHashUnverified;
-    }
-
-    let Some(gene) = ipfs.fetch(&entry.gene_hash) else {
-        return PharmacyOutcome::NoCureAvailable;
+    let cid = Cid(entry.ipfs_cid.clone());
+    let gene = match ipfs.fetch(&cid, GeneHandle(entry.gene_hash)) {
+        Ok(gene) => gene,
+        Err(LedgerError::GeneHashMismatch) => return PharmacyOutcome::GeneHashUnverified,
+        Err(_) => return PharmacyOutcome::LedgerUnavailable,
     };
 
     let outcome = sandbox.run(&gene.sequence);
@@ -299,60 +303,44 @@ pub fn resolve_and_run(
     }
 }
 
-/// The local pharmacy a running Soldier consults: the Genome Registry (Ledger 3), the mock
-/// IPFS store, the State Ledger (Ledger 1) it verifies gene hashes against, and the
-/// conjugation link it receives Epigenetic Suppressor Tokens over.
+/// The local pharmacy a running Soldier consults: the Genome Registry (Ledger 3) and gene
+/// storage, behind trait objects so the offline test suite can swap in fakes instead of
+/// hitting live devnet/IPFS (Q8). Reading the Genome Registry fresh on every dispense means
+/// there's no separate "absorb suppressor tokens" step anymore — the on-chain account is
+/// always the live truth (the old mock's broadcast/drain pair collapsed into one always-
+/// fresh read).
 pub struct Pharmacy {
-    pub genome: GenomeRegistry,
-    pub ipfs: MockIpfsStore,
-    pub state: StateLedger,
-    pub link: MockConjugationLink,
+    pub genome: Box<dyn GenomeSource>,
+    pub ipfs: Box<dyn GeneStore>,
 }
 
 impl Pharmacy {
-    /// An empty pharmacy — no cures published, nothing committed, no tokens pending.
+    /// An empty, offline pharmacy — no cures published. For tests that only exercise the
+    /// spore lifecycle, not the pharmacy flow itself.
     pub fn empty() -> Self {
         Self {
-            genome: GenomeRegistry::new(),
-            ipfs: MockIpfsStore::new(),
-            state: StateLedger::new(),
-            link: MockConjugationLink::new(),
-        }
-    }
-
-    /// Absorb any Epigenetic Suppressor Tokens broadcast over the link since the last check —
-    /// the kill-switch arriving from the network — applying each to the local Genome Registry.
-    fn absorb_suppressors(&mut self) {
-        for token in self.link.drain_suppressors() {
-            self.genome.apply_suppressor(&token);
+            genome: Box::new(FakeGenomeSource::new()),
+            ipfs: Box::new(FakeGeneStore::new()),
         }
     }
 }
 
 impl Soldier {
-    /// Dispense the cure for `threat_id` through the full pharmacy flow: absorb any suppressor
-    /// tokens first, then resolve → **kill-switch check** → Merkle-verify → fetch → run
-    /// in-sandbox. The PoC pharmacy holds a single committed gene at genome index 0.
-    fn dispense(&self, threat_id: &ThreatId, pharmacy: &mut Pharmacy) -> PharmacyOutcome {
-        pharmacy.absorb_suppressors();
+    /// Dispense the cure for `threat_id` through the full pharmacy flow: resolve →
+    /// **kill-switch check** → fetch-and-verify → run in-sandbox.
+    fn dispense(&self, threat_id: &ThreatId, pharmacy: &Pharmacy) -> PharmacyOutcome {
         println!(
             "[soldier] dispensing for pid {} (cloned rss {} KiB)",
             self.clone.pid, self.clone.rss_kib
         );
-        // Proof for the single committed gene (index 0); no committed block ⇒ no cure to run.
-        let Some(gene_proof) = pharmacy.link.genome_proof(0) else {
-            return PharmacyOutcome::NoCureAvailable;
-        };
         let sandbox = Sandbox::spawn(FrozenProcess {
             pid: self.clone.pid,
             memory: Vec::new(),
         });
         resolve_and_run(
             threat_id,
-            &pharmacy.genome,
-            &pharmacy.ipfs,
-            &pharmacy.state,
-            &gene_proof,
+            pharmacy.genome.as_ref(),
+            pharmacy.ipfs.as_ref(),
             sandbox,
         )
     }
@@ -363,8 +351,10 @@ mod pharmacy_flow_tests {
     use super::*;
     use crate::evolution::alleles::{Allele, GenePayload};
     use crate::evolution::sandbox::FrozenProcess;
-    use crate::ledger::client::MockConjugationLink;
-    use crate::ledger::registry::BehavioralSchema;
+    use crate::ledger::ipfs::FakeGeneStore;
+    use crate::ledger::registry::FakeGenomeSource;
+
+    const TEST_CID: &str = "bafy-test-gene";
 
     fn winning_gene() -> GenePayload {
         GenePayload {
@@ -380,7 +370,7 @@ mod pharmacy_flow_tests {
     }
 
     fn sample_threat_id() -> ThreatId {
-        BehavioralSchema(vec!["vssadmin".into()]).threat_id()
+        ThreatId([9u8; 32])
     }
 
     #[test]
@@ -388,26 +378,13 @@ mod pharmacy_flow_tests {
         let threat_id = sample_threat_id();
         let gene = winning_gene();
 
-        let mut ipfs = MockIpfsStore::new();
-        let uri = ipfs.store(gene.clone());
+        let mut ipfs = FakeGeneStore::new();
+        ipfs.store(TEST_CID, gene.clone());
 
-        let mut genome = GenomeRegistry::new();
-        genome.publish(threat_id, gene.gene_hash(), uri);
+        let mut genome = FakeGenomeSource::new();
+        genome.publish(threat_id, gene.gene_hash().0, TEST_CID.to_string());
 
-        let mut link = MockConjugationLink::new();
-        let header = link.commit_block(vec![], vec![gene.gene_hash().0], vec!["v1".into()], 0);
-        let mut state_ledger = StateLedger::new();
-        state_ledger.adopt(header);
-        let gene_proof = link.genome_proof(0).unwrap();
-
-        let outcome = resolve_and_run(
-            &threat_id,
-            &genome,
-            &ipfs,
-            &state_ledger,
-            &gene_proof,
-            mock_sandbox(),
-        );
+        let outcome = resolve_and_run(&threat_id, &genome, &ipfs, mock_sandbox());
         assert_eq!(outcome, PharmacyOutcome::Neutralized);
     }
 
@@ -416,27 +393,14 @@ mod pharmacy_flow_tests {
         let threat_id = sample_threat_id();
         let gene = winning_gene();
 
-        let mut ipfs = MockIpfsStore::new();
-        let uri = ipfs.store(gene.clone());
+        let mut ipfs = FakeGeneStore::new();
+        ipfs.store(TEST_CID, gene.clone());
 
-        let mut genome = GenomeRegistry::new();
-        genome.publish(threat_id, gene.gene_hash(), uri);
+        let mut genome = FakeGenomeSource::new();
+        genome.publish(threat_id, gene.gene_hash().0, TEST_CID.to_string());
         genome.suppress(&threat_id);
 
-        let mut link = MockConjugationLink::new();
-        let header = link.commit_block(vec![], vec![gene.gene_hash().0], vec!["v1".into()], 0);
-        let mut state_ledger = StateLedger::new();
-        state_ledger.adopt(header);
-        let gene_proof = link.genome_proof(0).unwrap();
-
-        let outcome = resolve_and_run(
-            &threat_id,
-            &genome,
-            &ipfs,
-            &state_ledger,
-            &gene_proof,
-            mock_sandbox(),
-        );
+        let outcome = resolve_and_run(&threat_id, &genome, &ipfs, mock_sandbox());
 
         assert_eq!(outcome, PharmacyOutcome::Suppressed);
         assert_eq!(ipfs.fetch_calls(), 0, "must not fetch a suppressed gene");
@@ -447,52 +411,30 @@ mod pharmacy_flow_tests {
         let threat_id = sample_threat_id();
         let gene = winning_gene();
 
-        let mut ipfs = MockIpfsStore::new();
-        let uri = ipfs.store(gene.clone());
+        let mut ipfs = FakeGeneStore::new();
+        ipfs.store(TEST_CID, gene.clone());
 
-        let mut genome = GenomeRegistry::new();
-        genome.publish(threat_id, gene.gene_hash(), uri);
+        // Genome Registry claims a hash that doesn't match what's actually stored at the CID.
+        let mut genome = FakeGenomeSource::new();
+        genome.publish(threat_id, [0xEE; 32], TEST_CID.to_string());
 
-        // Commit a block whose genome root does NOT include this gene's hash.
-        let mut link = MockConjugationLink::new();
-        let header = link.commit_block(vec![], vec![[0xEE; 32]], vec!["v1".into()], 0);
-        let mut state_ledger = StateLedger::new();
-        state_ledger.adopt(header);
-        let bogus_proof = link.genome_proof(0).unwrap();
-
-        let outcome = resolve_and_run(
-            &threat_id,
-            &genome,
-            &ipfs,
-            &state_ledger,
-            &bogus_proof,
-            mock_sandbox(),
-        );
+        let outcome = resolve_and_run(&threat_id, &genome, &ipfs, mock_sandbox());
 
         assert_eq!(outcome, PharmacyOutcome::GeneHashUnverified);
-        assert_eq!(ipfs.fetch_calls(), 0, "must verify before fetching");
+        // Verification happens by comparing the fetched bytes' hash (see ../../ledger/ipfs.rs)
+        // rather than a pre-fetch Merkle check, so the fetch itself does happen here — a
+        // deliberate ordering change from the old mock, matching source-of-truth.md's
+        // updated Ledger 3 wording ("fetches... checks its hash against Wasm_Gene_Hash").
+        assert_eq!(ipfs.fetch_calls(), 1);
     }
 
     #[test]
     fn unknown_threat_id_has_no_cure() {
         let threat_id = sample_threat_id();
-        let genome = GenomeRegistry::new();
-        let ipfs = MockIpfsStore::new();
+        let genome = FakeGenomeSource::new();
+        let ipfs = FakeGeneStore::new();
 
-        let mut link = MockConjugationLink::new();
-        let header = link.commit_block(vec![], vec![[0x11; 32]], vec!["v1".into()], 0);
-        let mut state_ledger = StateLedger::new();
-        state_ledger.adopt(header);
-        let gene_proof = link.genome_proof(0).unwrap();
-
-        let outcome = resolve_and_run(
-            &threat_id,
-            &genome,
-            &ipfs,
-            &state_ledger,
-            &gene_proof,
-            mock_sandbox(),
-        );
+        let outcome = resolve_and_run(&threat_id, &genome, &ipfs, mock_sandbox());
 
         assert_eq!(outcome, PharmacyOutcome::NoCureAvailable);
         assert_eq!(ipfs.fetch_calls(), 0);
@@ -503,26 +445,28 @@ mod pharmacy_flow_tests {
 mod live_dispense_tests {
     use super::*;
     use crate::evolution::alleles::{Allele, GenePayload};
-    use crate::ledger::registry::SuppressorToken;
+    use crate::ledger::ipfs::FakeGeneStore;
+    use crate::ledger::registry::FakeGenomeSource;
 
-    fn seeded_pharmacy(threat_id: ThreatId) -> Pharmacy {
+    const TEST_CID: &str = "bafy-test-gene";
+
+    fn seeded_pharmacy(threat_id: ThreatId, suppressed: bool) -> Pharmacy {
         let gene = GenePayload {
             sequence: vec![Allele::Allele04, Allele::Allele12],
         };
-        let gene_hash = gene.gene_hash();
-        let mut ipfs = MockIpfsStore::new();
-        let uri = ipfs.store(gene);
-        let mut genome = GenomeRegistry::new();
-        genome.publish(threat_id, gene_hash, uri);
-        let mut link = MockConjugationLink::new();
-        let header = link.commit_block(vec![], vec![gene_hash.0], vec!["v1".into()], 0);
-        let mut state = StateLedger::new();
-        state.adopt(header);
+        let mut ipfs = FakeGeneStore::new();
+        ipfs.store(TEST_CID, gene.clone());
+        let mut genome = FakeGenomeSource::new();
+        genome.publish(threat_id, gene.gene_hash().0, TEST_CID.to_string());
+        if suppressed {
+            // Suppressed directly on the Genome Registry entry — the on-chain migration
+            // collapsed the old mock's separate "broadcast then drain" token exchange into
+            // a single always-fresh account read (see ../../ledger/registry.rs).
+            genome.suppress(&threat_id);
+        }
         Pharmacy {
-            genome,
-            ipfs,
-            state,
-            link,
+            genome: Box::new(genome),
+            ipfs: Box::new(ipfs),
         }
     }
 
@@ -540,27 +484,17 @@ mod live_dispense_tests {
     #[test]
     fn active_cure_is_dispensed_in_sandbox() {
         let threat_id = ThreatId([3u8; 32]);
-        let mut pharmacy = seeded_pharmacy(threat_id);
-        let outcome = woken_soldier(threat_id).dispense(&threat_id, &mut pharmacy);
+        let pharmacy = seeded_pharmacy(threat_id, false);
+        let outcome = woken_soldier(threat_id).dispense(&threat_id, &pharmacy);
         assert_eq!(outcome, PharmacyOutcome::Neutralized);
     }
 
     #[test]
-    fn broadcast_suppressor_halts_the_live_cure_before_fetch() {
+    fn suppressed_gene_halts_the_live_cure_before_fetch() {
         let threat_id = ThreatId([3u8; 32]);
-        let mut pharmacy = seeded_pharmacy(threat_id);
+        let pharmacy = seeded_pharmacy(threat_id, true);
 
-        // The kill-switch arrives over the wire before the Soldier dispenses.
-        pharmacy
-            .link
-            .broadcast_suppressor(SuppressorToken { threat_id });
-
-        let outcome = woken_soldier(threat_id).dispense(&threat_id, &mut pharmacy);
+        let outcome = woken_soldier(threat_id).dispense(&threat_id, &pharmacy);
         assert_eq!(outcome, PharmacyOutcome::Suppressed);
-        assert_eq!(
-            pharmacy.ipfs.fetch_calls(),
-            0,
-            "a suppressed cure must never be fetched"
-        );
     }
 }

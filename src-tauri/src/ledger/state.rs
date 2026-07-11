@@ -1,198 +1,80 @@
-//! Local Merkle-tree construction and proof verification against the State Ledger root.
-//! Every threat or gene fetched from the network is untrusted until it verifies here.
-//!
-//! This is Ledger 1 (Phase 5 of ../../.claude/docs/plan.md): the only ledger an endpoint
-//! downloads in full. Threat Registry and Genome Registry rows are verified via a
-//! Merkle path (see ../client.rs), never a full-registry download.
+//! Solana light-client reads: commitment-level account fetches, replacing the custom
+//! Merkle-path scheme (Phase 11 box 7 — see ../../.claude/docs/source-of-truth.md, Ledger 1
+//! and Ledger 2/3). Reading a `confirmed`-commitment account already carries Solana's own
+//! integrity guarantee (Q3: `confirmed` chosen over `finalized` for demo responsiveness;
+//! the Source of Truth permits either), so there is no separate proof object to construct
+//! or verify.
 
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use std::sync::Arc;
 
-/// A tree node hash — the same 32-byte shape as `ThreatId`/`GeneHandle`, so registry rows
-/// become leaves without a conversion step.
-pub type Hash = [u8; 32];
+use anchor_client::anchor_lang::prelude::Pubkey;
+use anchor_client::anchor_lang::AccountDeserialize;
+use anchor_client::{Client, Cluster, CommitmentConfig};
+use solana_keypair::Keypair;
+use solana_rpc_client::rpc_client::RpcClient;
 
-fn hash_pair(left: &Hash, right: &Hash) -> Hash {
-    let mut hasher = Sha256::new();
-    hasher.update(left);
-    hasher.update(right);
-    hasher.finalize().into()
+use bio_digital_defense::{GenomeEntry, ThreatEntry};
+
+use crate::core::ThreatId;
+use crate::ledger::LedgerError;
+
+/// PDA seed prefixes, mirrored by hand from
+/// `programs/bio_digital_defense/src/constants.rs` — the client and on-chain program are
+/// separate crates, so these stay in sync manually.
+const THREAT_SEED: &[u8] = b"threat";
+const GENOME_SEED: &[u8] = b"genome";
+
+pub fn threat_pda(threat_id: &ThreatId) -> Pubkey {
+    Pubkey::find_program_address(&[THREAT_SEED, &threat_id.0], &bio_digital_defense::ID).0
 }
 
-/// Which side a proof step's sibling sits on, so verification rebuilds each parent in the
-/// right order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Side {
-    Left,
-    Right,
+pub fn genome_pda(threat_id: &ThreatId) -> Pubkey {
+    Pubkey::find_program_address(&[GENOME_SEED, &threat_id.0], &bio_digital_defense::ID).0
 }
 
-/// A Merkle authentication path: the sibling hash at each level from leaf to root. This is
-/// the "tiny cryptographic path" a light client requests instead of the full registry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MerkleProof {
-    steps: Vec<(Side, Hash)>,
+/// Solana devnet RPC light client — an endpoint downloads no chain, just queries account
+/// state directly at `confirmed` commitment. Built via `anchor_client` (rather than a
+/// hand-constructed RPC client) so its account-fetch is guaranteed version-compatible with
+/// the anchor-lang types (`ThreatEntry`/`GenomeEntry`) it deserializes into.
+pub struct SolanaLightClient {
+    rpc: RpcClient,
 }
 
-impl MerkleProof {
-    /// Recomputes the root from `leaf` plus this path and checks it against `root`.
-    pub fn verify(&self, leaf: Hash, root: Hash) -> bool {
-        let mut current = leaf;
-        for (side, sibling) in &self.steps {
-            current = match side {
-                Side::Left => hash_pair(sibling, &current),
-                Side::Right => hash_pair(&current, sibling),
-            };
-        }
-        current == root
+impl SolanaLightClient {
+    /// `payer` isn't used for signing here (reads need no signature) — a `Program` handle
+    /// still requires one to construct, so this reuses whichever keypair the caller has on
+    /// hand (Q5: the single demo node's deployer wallet).
+    pub fn new(cluster: Cluster, payer: Arc<Keypair>) -> Result<Self, LedgerError> {
+        let client = Client::new_with_options(cluster, payer, CommitmentConfig::confirmed());
+        let program = client.program(bio_digital_defense::ID)?;
+        Ok(Self { rpc: program.rpc() })
     }
-}
 
-/// A binary Merkle tree over registry row hashes (Threat Registry or Genome Registry). A
-/// dangling last node at an odd level is paired with itself (standard Merkle padding).
-#[derive(Debug, Clone)]
-pub struct MerkleTree {
-    levels: Vec<Vec<Hash>>,
-}
-
-impl MerkleTree {
-    /// Builds a tree over `leaves`. An empty registry roots to an all-zero hash.
-    pub fn build(leaves: Vec<Hash>) -> Self {
-        if leaves.is_empty() {
-            return Self {
-                levels: vec![vec![[0u8; 32]]],
-            };
-        }
-        let mut levels = vec![leaves];
-        while levels.last().unwrap().len() > 1 {
-            let prev = levels.last().unwrap();
-            let mut next = Vec::with_capacity((prev.len() + 1) / 2);
-            for pair in prev.chunks(2) {
-                next.push(match pair {
-                    [a, b] => hash_pair(a, b),
-                    [a] => hash_pair(a, a),
-                    _ => unreachable!(),
-                });
+    fn get_account<T: AccountDeserialize>(
+        &self,
+        address: &Pubkey,
+    ) -> Result<Option<T>, LedgerError> {
+        match self
+            .rpc
+            .get_account_with_commitment(address, CommitmentConfig::confirmed())?
+            .value
+        {
+            Some(account) => {
+                let mut data: &[u8] = &account.data;
+                Ok(Some(T::try_deserialize(&mut data)?))
             }
-            levels.push(next);
-        }
-        Self { levels }
-    }
-
-    pub fn root(&self) -> Hash {
-        self.levels.last().unwrap()[0]
-    }
-
-    /// Builds the authentication path for the leaf at `index`, or `None` if out of range.
-    pub fn proof(&self, mut index: usize) -> Option<MerkleProof> {
-        if index >= self.levels[0].len() {
-            return None;
-        }
-        let mut steps = Vec::new();
-        for level in &self.levels[..self.levels.len() - 1] {
-            let sibling_index = index ^ 1;
-            let sibling = level.get(sibling_index).copied().unwrap_or(level[index]);
-            let side = if sibling_index < index {
-                Side::Left
-            } else {
-                Side::Right
-            };
-            steps.push((side, sibling));
-            index /= 2;
-        }
-        Some(MerkleProof { steps })
-    }
-}
-
-/// One block header: chronological metadata plus the two registry roots it commits to.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockHeader {
-    pub height: u64,
-    pub timestamp: u64,
-    pub threat_root: Hash,
-    pub genome_root: Hash,
-    /// Mock validator signatures — real signing/PoI consensus is Phase 8 (out of scope
-    /// here); see ../../.claude/docs/security.md.
-    pub validator_signatures: Vec<String>,
-}
-
-/// The State Ledger (Ledger 1) as an endpoint holds it: a chain of headers only, never the
-/// full Threat/Genome registries. Verifying a threat or gene means fetching a Merkle path
-/// from a peer (see ../client.rs) and checking it against a header trusted here.
-#[derive(Debug, Default)]
-pub struct StateLedger {
-    headers: Vec<BlockHeader>,
-}
-
-impl StateLedger {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Adopts a header received from the network (e.g. via `MockConjugationLink`).
-    pub fn adopt(&mut self, header: BlockHeader) {
-        self.headers.push(header);
-    }
-
-    pub fn latest(&self) -> Option<&BlockHeader> {
-        self.headers.last()
-    }
-
-    /// Verifies a Threat Registry row hash against the latest committed `threat_root`.
-    pub fn verify_threat(&self, leaf: Hash, proof: &MerkleProof) -> bool {
-        self.latest()
-            .is_some_and(|h| proof.verify(leaf, h.threat_root))
-    }
-
-    /// Verifies a Genome Registry row hash (a `Wasm_Gene_Hash`) against the latest
-    /// committed `genome_root`.
-    pub fn verify_gene(&self, leaf: Hash, proof: &MerkleProof) -> bool {
-        self.latest()
-            .is_some_and(|h| proof.verify(leaf, h.genome_root))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn leaf(byte: u8) -> Hash {
-        [byte; 32]
-    }
-
-    #[test]
-    fn proof_verifies_every_leaf_in_an_odd_sized_tree() {
-        let leaves = vec![leaf(1), leaf(2), leaf(3)];
-        let tree = MerkleTree::build(leaves.clone());
-        for (i, l) in leaves.into_iter().enumerate() {
-            let proof = tree.proof(i).unwrap();
-            assert!(proof.verify(l, tree.root()));
+            None => Ok(None),
         }
     }
 
-    #[test]
-    fn tampered_leaf_fails_verification() {
-        let tree = MerkleTree::build(vec![leaf(1), leaf(2), leaf(3), leaf(4)]);
-        let proof = tree.proof(1).unwrap();
-        assert!(!proof.verify(leaf(9), tree.root()));
+    /// On-demand lookup by `Threat_ID` — mirrors `ThreatRegistry::get()` in the old mock.
+    pub fn get_threat_entry(&self, threat_id: &ThreatId) -> Result<Option<ThreatEntry>, LedgerError> {
+        self.get_account(&threat_pda(threat_id))
     }
 
-    #[test]
-    fn light_client_verifies_without_the_full_registry() {
-        let threat_tree = MerkleTree::build(vec![leaf(1), leaf(2)]);
-        let header = BlockHeader {
-            height: 0,
-            timestamp: 0,
-            threat_root: threat_tree.root(),
-            genome_root: MerkleTree::build(vec![]).root(),
-            validator_signatures: vec!["validator-1".into()],
-        };
-
-        let mut endpoint = StateLedger::new();
-        endpoint.adopt(header);
-
-        let proof = threat_tree.proof(1).unwrap();
-        assert!(endpoint.verify_threat(leaf(2), &proof));
-        assert!(!endpoint.verify_threat(leaf(9), &proof));
+    /// On-demand lookup by `Threat_ID` — the only read path a Soldier uses (never a
+    /// passive scan), mirrors `GenomeRegistry::get()` in the old mock.
+    pub fn get_genome_entry(&self, threat_id: &ThreatId) -> Result<Option<GenomeEntry>, LedgerError> {
+        self.get_account(&genome_pda(threat_id))
     }
 }

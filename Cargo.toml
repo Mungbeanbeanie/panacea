@@ -2,6 +2,9 @@
 members = [
     "programs/*"
 ]
+exclude = [
+    "src-tauri"
+]
 resolver = "2"
 
 [workspace.package]

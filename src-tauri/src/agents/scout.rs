@@ -207,53 +207,99 @@ impl BehaviorSource for ScriptedSource {
     }
 }
 
-/// PoC demo entry point: wire a scripted target and stub Soldier / Ledger-2 consumers, then
-/// run the Scout. The stub consumers log what the Scout emits until Phases 2–3 replace them.
+/// `Behavioral_Schema` hash submitted to the Threat Registry PDA — mirrors [`threat_id`]'s
+/// own hashing so both are deterministic over the same action sequence.
+fn behavioral_schema_hash(schema: &BehavioralSchema) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for action in &schema.actions {
+        hasher.update([*action as u8]);
+    }
+    hasher.finalize().into()
+}
+
+/// Live demo entry point: wires a scripted target against the **real** Solana devnet
+/// program and Pinata IPFS (Phase 11 — "no mocks left in the ledger path"). Seeds the
+/// scripted trajectory's cure via a real `commit_gene` + `suppress_gene` pair before the
+/// Scout starts, so the live wake demonstrates the kill-switch halting the cure before any
+/// fetch/exec — now as genuine devnet transactions instead of local mocks. Requires
+/// `PINATA_JWT` to be set; without it the IPFS upload fails loudly and the demo seed is
+/// skipped (the Scout/Soldier lifecycle still runs, just with nothing to dispense).
 pub fn spawn_demo() -> JoinHandle<()> {
+    use std::sync::Arc;
+
+    use anchor_client::Cluster;
+    use solana_keypair::read_keypair_file;
+
     use super::soldier::Pharmacy;
     use crate::evolution::alleles::{Allele, GenePayload};
-    use crate::ledger::client::MockConjugationLink;
-    use crate::ledger::registry::{GenomeRegistry, MockIpfsStore, SuppressorToken};
-    use crate::ledger::state::StateLedger;
+    use crate::ledger::client::SolanaConjugationLink;
+    use crate::ledger::ipfs::IpfsClient;
+    use crate::ledger::registry::GenomeRegistry;
+    use crate::ledger::state::SolanaLightClient;
 
     let (wake_tx, wake_rx) = channel::<WakeSignal>();
     let (threat_tx, threat_rx) = channel::<ThreatReport>();
 
-    // Demo pharmacy: publish the cure for the scripted trajectory, commit its hash to the
-    // State Ledger, then broadcast an Epigenetic Suppressor Token — so the live wake
-    // demonstrates the kill-switch halting the cure before any fetch/exec (Phase 9).
+    let deployer = Arc::new(
+        read_keypair_file("~/.config/solana/id.json").expect("read deployer keypair"),
+    );
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let validators: Vec<_> = (1..=5)
+        .map(|i| {
+            let path = format!("{manifest_dir}/../keys/lymph-nodes/validator-{i}.json");
+            read_keypair_file(&path).expect("read Lymph Node validator keypair")
+        })
+        .collect();
+
+    let conjugation = SolanaConjugationLink::new(Cluster::Devnet, deployer.clone())
+        .expect("connect SolanaConjugationLink to devnet");
+    let light_client = SolanaLightClient::new(Cluster::Devnet, deployer.clone())
+        .expect("connect SolanaLightClient to devnet");
+    let ipfs = IpfsClient::new();
+
+    // Demo seed: publish the cure for the scripted trajectory, then immediately suppress
+    // it — so the live wake demonstrates the kill-switch (Phase 9) via real transactions.
     let threat_id = scripted_threat_id();
     let gene = GenePayload {
         sequence: vec![Allele::Allele04, Allele::Allele12],
     };
-    let gene_hash = gene.gene_hash();
-    let mut ipfs = MockIpfsStore::new();
-    let uri = ipfs.store(gene);
-    let mut genome = GenomeRegistry::new();
-    genome.publish(threat_id, gene_hash, uri);
-    let mut link = MockConjugationLink::new();
-    let header = link.commit_block(vec![], vec![gene_hash.0], vec!["validator-1".into()], 0);
-    let mut state = StateLedger::new();
-    state.adopt(header);
-    link.broadcast_suppressor(SuppressorToken { threat_id });
+    match ipfs.upload(&gene) {
+        Ok(cid) => {
+            match conjugation.commit_gene(threat_id, gene.gene_hash(), cid, &validators) {
+                Ok(sig) => {
+                    println!("[ledger3] commit_gene {sig}");
+                    match conjugation.suppress_gene(threat_id, &validators) {
+                        Ok(sig) => println!("[ledger3] suppress_gene {sig}"),
+                        Err(e) => eprintln!("[ledger3] suppress_gene failed: {e}"),
+                    }
+                }
+                Err(e) => eprintln!("[ledger3] commit_gene failed: {e}"),
+            }
+        }
+        Err(e) => eprintln!("[ledger3] IPFS upload failed (is PINATA_JWT set?): {e}"),
+    }
+
     let pharmacy = Pharmacy {
-        genome,
-        ipfs,
-        state,
-        link,
+        genome: Box::new(GenomeRegistry::new(light_client)),
+        ipfs: Box::new(ipfs),
     };
 
     // Real Soldier consumes the wake channel against the pharmacy: Phase-3 spore lifecycle +
-    // Phase-6 pharmacy resolution + Phase-9 kill-switch.
+    // Phase-6/11 pharmacy resolution against live devnet + Phase-9 kill-switch.
     let spore_path = std::env::temp_dir().join("bio-digital-defense.spore");
     super::soldier::run(wake_rx, spore_path, pharmacy);
+
+    // Threat Registry (Ledger 2): each report is now a real `submit_threat` transaction.
     thread::spawn(move || {
         for report in threat_rx {
-            println!(
-                "[ledger2] threat_id={:02x?} ({} actions)",
-                report.threat_id.0,
-                report.schema.actions.len()
-            );
+            let schema_hash = behavioral_schema_hash(&report.schema);
+            match conjugation.submit_threat(report.threat_id, schema_hash) {
+                Ok(sig) => println!(
+                    "[ledger2] submit_threat {sig} ({} actions)",
+                    report.schema.actions.len()
+                ),
+                Err(e) => eprintln!("[ledger2] submit_threat failed: {e}"),
+            }
         }
     });
 

@@ -2,6 +2,7 @@
 //! combination which reliably aborts the target inside the sandbox, then compiles the
 //! winning sequence to a Wasm gene payload.
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::core::GeneHandle;
@@ -10,7 +11,7 @@ use crate::evolution::sandbox::{Sandbox, TrialOutcome};
 /// A pre-compiled, safe exploit primitive the fuzz driver combines. Named after the
 /// Source of Truth's worked example: `Allele04` (Thread-Context Exit Token Injection) +
 /// `Allele12` (IPC Pipe Buffer Overflow) is the combo that reliably kills the target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Allele {
     Allele04,
     Allele12,
@@ -25,7 +26,7 @@ impl Allele {
 
 /// Compiled winning allele sequence: the Wasm Gene Payload a Soldier writes to the Genome
 /// Registry (Ledger 3, Phase 6).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenePayload {
     pub sequence: Vec<Allele>,
 }

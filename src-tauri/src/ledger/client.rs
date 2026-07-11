@@ -1,134 +1,124 @@
-//! P2P / WebSocket transport ("conjugation") between nodes.
-//!
-//! Real gossip/consensus networking is out of scope for the PoC (see
-//! ../../.claude/docs/security.md); `MockConjugationLink` stands in for the wire so an
-//! endpoint can exercise the exact commit / fetch-header / request-Merkle-path flow it will
-//! use against a real peer. See ../../.claude/docs/plan.md, Phase 5.
+//! Real Solana RPC transport ("conjugation") for the on-chain Threat/Genome Registry
+//! (Solana migration Phase 11, box 6) — replaces `MockConjugationLink`'s P2P stand-in.
+//! Every write here is a signed Solana transaction; confirmation *is* the commit, so there
+//! is no separate block to assemble.
 
-use crate::ledger::registry::SuppressorToken;
-use crate::ledger::state::{BlockHeader, Hash, MerkleProof, MerkleTree};
+use std::sync::Arc;
 
-/// A network peer able to commit a block over the current registry contents and answer
-/// Merkle-path requests for it. Stands in for the real conjugation transport.
-#[derive(Debug)]
-pub struct MockConjugationLink {
-    headers: Vec<BlockHeader>,
-    threat_tree: MerkleTree,
-    genome_tree: MerkleTree,
-    pending_suppressors: Vec<SuppressorToken>,
+use anchor_client::anchor_lang::solana_program::system_program;
+use anchor_client::{Client, Cluster, Program, Signer};
+use bio_digital_defense::{accounts, instruction};
+use solana_keypair::Keypair;
+use solana_signature::Signature;
+
+use crate::core::{GeneHandle, ThreatId};
+use crate::ledger::ipfs::Cid;
+use crate::ledger::state::{genome_pda, threat_pda};
+use crate::ledger::LedgerError;
+
+/// Real Solana RPC transport, replacing `MockConjugationLink`. Holds one
+/// `anchor_client::Program` handle (payer + cluster), built once and reused for every
+/// instruction this endpoint submits.
+pub struct SolanaConjugationLink {
+    program: Program<Arc<Keypair>>,
 }
 
-impl MockConjugationLink {
-    pub fn new() -> Self {
-        Self {
-            headers: Vec::new(),
-            threat_tree: MerkleTree::build(vec![]),
-            genome_tree: MerkleTree::build(vec![]),
-            pending_suppressors: Vec::new(),
+impl SolanaConjugationLink {
+    pub fn new(cluster: Cluster, payer: Arc<Keypair>) -> Result<Self, LedgerError> {
+        let client = Client::new(cluster, payer);
+        let program = client.program(bio_digital_defense::ID)?;
+        Ok(Self { program })
+    }
+
+    /// Threat Registry (Ledger 2): create/update the `Threat_ID`'s PDA, incrementing
+    /// `Confidence_Score` — mirrors `ThreatRegistry::report()`. Any funded devnet keypair
+    /// can call this (the Scout's own signer — Q5: the same deployer wallet).
+    pub fn submit_threat(
+        &self,
+        threat_id: ThreatId,
+        behavioral_schema_hash: [u8; 32],
+    ) -> Result<Signature, LedgerError> {
+        let threat_entry = threat_pda(&threat_id);
+        let signature = self
+            .program
+            .request()
+            .accounts(accounts::SubmitThreat {
+                reporter: self.program.payer(),
+                threat_entry,
+                system_program: system_program::ID,
+            })
+            .args(instruction::SubmitThreat {
+                threat_id: threat_id.0,
+                behavioral_schema_hash,
+            })
+            .send()?;
+        Ok(signature)
+    }
+
+    /// Genome Registry (Ledger 3): publish a cure, gated by the 3-of-5 Lymph Node multisig
+    /// (Proof of Immunity) — mirrors `consensus::commit_gene()` + `GenomeRegistry::publish()`
+    /// combined. `validators` holds the Lymph Node keypair files (Q4: one process co-signs
+    /// on behalf of all 5).
+    pub fn commit_gene(
+        &self,
+        threat_id: ThreatId,
+        gene_hash: GeneHandle,
+        ipfs_cid: Cid,
+        validators: &[Keypair],
+    ) -> Result<Signature, LedgerError> {
+        let genome_entry = genome_pda(&threat_id);
+        let mut request = self
+            .program
+            .request()
+            .accounts(accounts::CommitGene {
+                payer: self.program.payer(),
+                genome_entry,
+                system_program: system_program::ID,
+                validator_1: validators.first().map(Signer::pubkey),
+                validator_2: validators.get(1).map(Signer::pubkey),
+                validator_3: validators.get(2).map(Signer::pubkey),
+                validator_4: validators.get(3).map(Signer::pubkey),
+                validator_5: validators.get(4).map(Signer::pubkey),
+            })
+            .args(instruction::CommitGene {
+                threat_id: threat_id.0,
+                gene_hash: gene_hash.0,
+                ipfs_cid: ipfs_cid.0,
+            });
+        for validator in validators {
+            request = request.signer(validator);
         }
+        Ok(request.send()?)
     }
 
-    /// Commits a new block: rebuilds the Merkle trees over the given registry row hashes
-    /// and appends a header. Returns the header for a light client to `adopt` (see
-    /// ../state.rs).
-    pub fn commit_block(
-        &mut self,
-        threat_leaves: Vec<Hash>,
-        genome_leaves: Vec<Hash>,
-        validator_signatures: Vec<String>,
-        timestamp: u64,
-    ) -> BlockHeader {
-        self.threat_tree = MerkleTree::build(threat_leaves);
-        self.genome_tree = MerkleTree::build(genome_leaves);
-        let header = BlockHeader {
-            height: self.headers.len() as u64,
-            timestamp,
-            threat_root: self.threat_tree.root(),
-            genome_root: self.genome_tree.root(),
-            validator_signatures,
-        };
-        self.headers.push(header.clone());
-        header
-    }
-
-    pub fn latest_header(&self) -> Option<&BlockHeader> {
-        self.headers.last()
-    }
-
-    /// Broadcasts an Epigenetic Suppressor Token onto the wire — the kill-switch, sent to
-    /// every node. Peers pick it up with [`Self::drain_suppressors`].
-    pub fn broadcast_suppressor(&mut self, token: SuppressorToken) {
-        self.pending_suppressors.push(token);
-    }
-
-    /// Drains the suppressor tokens received since the last poll, so a node can apply them to
-    /// its local Genome Registry (see `GenomeRegistry::apply_suppressor`).
-    pub fn drain_suppressors(&mut self) -> Vec<SuppressorToken> {
-        std::mem::take(&mut self.pending_suppressors)
-    }
-
-    /// Serves a Merkle path for the threat row at `index` in the most recently committed
-    /// block — the "tiny cryptographic path" instead of the full Threat Registry.
-    pub fn threat_proof(&self, index: usize) -> Option<MerkleProof> {
-        self.threat_tree.proof(index)
-    }
-
-    /// Serves a Merkle path for the genome row at `index` in the most recently committed
-    /// block.
-    pub fn genome_proof(&self, index: usize) -> Option<MerkleProof> {
-        self.genome_tree.proof(index)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ledger::state::StateLedger;
-
-    #[test]
-    fn endpoint_verifies_a_threat_via_a_fetched_path_only() {
-        let mut link = MockConjugationLink::new();
-        let leaves = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
-        let header = link.commit_block(leaves, vec![], vec!["validator-1".into()], 1);
-
-        let mut endpoint = StateLedger::new();
-        endpoint.adopt(header);
-
-        let proof = link.threat_proof(1).unwrap();
-        assert!(endpoint.verify_threat([2u8; 32], &proof));
-    }
-
-    #[test]
-    fn broadcast_suppressor_is_drained_and_applied() {
-        use crate::evolution::alleles::{Allele, GenePayload};
-        use crate::ledger::registry::{
-            BehavioralSchema, EpigeneticStatus, GenomeRegistry, MockIpfsStore, SuppressorToken,
-        };
-
-        let threat_id = BehavioralSchema(vec!["vssadmin".into()]).threat_id();
-        let gene = GenePayload {
-            sequence: vec![Allele::Allele04, Allele::Allele12],
-        };
-        let mut ipfs = MockIpfsStore::new();
-        let uri = ipfs.store(gene.clone());
-        let mut genome = GenomeRegistry::new();
-        genome.publish(threat_id, gene.gene_hash(), uri);
-
-        let mut link = MockConjugationLink::new();
-        link.broadcast_suppressor(SuppressorToken { threat_id });
-
-        // A node drains the wire and applies the received tokens to its local registry.
-        for token in link.drain_suppressors() {
-            genome.apply_suppressor(&token);
+    /// Epigenetic Suppressor Token: flips `Epigenetic_Status` to 1 on an existing Genome
+    /// Registry PDA, gated by the same multisig as `commit_gene` — mirrors
+    /// `GenomeRegistry::suppress()` and the old mock's broadcast/drain pair, collapsed into
+    /// one transaction (no separate "broadcast then drain" step once suppression *is* the
+    /// transaction itself).
+    pub fn suppress_gene(
+        &self,
+        threat_id: ThreatId,
+        validators: &[Keypair],
+    ) -> Result<Signature, LedgerError> {
+        let genome_entry = genome_pda(&threat_id);
+        let mut request = self
+            .program
+            .request()
+            .accounts(accounts::SuppressGene {
+                genome_entry,
+                validator_1: validators.first().map(Signer::pubkey),
+                validator_2: validators.get(1).map(Signer::pubkey),
+                validator_3: validators.get(2).map(Signer::pubkey),
+                validator_4: validators.get(3).map(Signer::pubkey),
+                validator_5: validators.get(4).map(Signer::pubkey),
+            })
+            .args(instruction::SuppressGene {
+                threat_id: threat_id.0,
+            });
+        for validator in validators {
+            request = request.signer(validator);
         }
-
-        assert_eq!(
-            genome.get(&threat_id).unwrap().epigenetic_status,
-            EpigeneticStatus::Suppressed
-        );
-        assert!(
-            link.drain_suppressors().is_empty(),
-            "drained tokens are not redelivered"
-        );
+        Ok(request.send()?)
     }
 }
