@@ -2,16 +2,17 @@
 //! (0 active, 1 suppressed); status 1 is the kill-switch that halts a cure
 //! (see ../../.claude/skills/suppression-path-test).
 //!
-//! This file currently holds the Threat Registry (Ledger 2, Phase 2 of
-//! ../../.claude/docs/plan.md). The Genome Registry (Phase 6) lands in a section below when
-//! that phase starts, per the merge-risk note in ../../.claude/docs/collaboration.md.
+//! Threat Registry (Ledger 2, Phase 2) and Genome Registry (Ledger 3, Phase 6) both live
+//! here, per the merge-risk note in ../../.claude/docs/collaboration.md.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::core::ThreatId;
+use crate::core::{GeneHandle, ThreatId};
+use crate::evolution::alleles::GenePayload;
 
 /// Confidence score that triggers a network-wide mobilization command.
 ///
@@ -97,6 +98,97 @@ impl ThreatRegistry {
     }
 }
 
+/// Kill-switch flag on a Genome Registry row (`Epigenetic_Status`): 0 = active expression,
+/// 1 = suppressed. A Soldier must check this *before* fetching or executing the gene (see
+/// ../../.claude/skills/suppression-path-test).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EpigeneticStatus {
+    Active,
+    Suppressed,
+}
+
+/// One row of the Genome Registry: the cure for a `Threat_ID`.
+#[derive(Debug, Clone)]
+pub struct GenomeEntry {
+    pub gene_hash: GeneHandle,
+    pub ipfs_uri: String,
+    pub epigenetic_status: EpigeneticStatus,
+}
+
+/// The Genome Registry (Ledger 3): the global pharmacy mapping `Threat_ID → Wasm_Gene_Hash`.
+/// Soldiers query it **on demand** by `Threat_ID` — never a passive scan.
+#[derive(Debug, Default)]
+pub struct GenomeRegistry {
+    entries: HashMap<ThreatId, GenomeEntry>,
+}
+
+impl GenomeRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Publishes a cure for `threat_id` (the Stage 4 ledger commit — mocked here; the real
+    /// consensus gate is Phase 8). Starts `Active`.
+    pub fn publish(&mut self, threat_id: ThreatId, gene_hash: GeneHandle, ipfs_uri: String) {
+        self.entries.insert(
+            threat_id,
+            GenomeEntry { gene_hash, ipfs_uri, epigenetic_status: EpigeneticStatus::Active },
+        );
+    }
+
+    /// On-demand lookup by `Threat_ID` — the only read path a Soldier uses.
+    pub fn get(&self, threat_id: &ThreatId) -> Option<&GenomeEntry> {
+        self.entries.get(threat_id)
+    }
+
+    /// Epigenetic Suppressor Token: flips a gene's status to suppressed so Soldiers stop
+    /// executing it. Broadcast mechanics land in Phase 9; this sets the flag it acts on.
+    pub fn suppress(&mut self, threat_id: &ThreatId) {
+        if let Some(entry) = self.entries.get_mut(threat_id) {
+            entry.epigenetic_status = EpigeneticStatus::Suppressed;
+        }
+    }
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Mock IPFS: content-addressed store for compiled gene payloads, keyed by the same
+/// `Wasm_Gene_Hash` a [`GenomeEntry::ipfs_uri`] points at. Stands in for the real
+/// distributed file system (see ../../.claude/docs/security.md).
+///
+/// Tracks fetch calls so tests can assert a suppressed gene is never fetched (see
+/// ../../.claude/skills/suppression-path-test).
+#[derive(Debug, Default)]
+pub struct MockIpfsStore {
+    blobs: HashMap<GeneHandle, GenePayload>,
+    fetch_calls: Cell<u32>,
+}
+
+impl MockIpfsStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stores a compiled gene, returning the `IPFS_URI` to record in the Genome Registry.
+    pub fn store(&mut self, gene: GenePayload) -> String {
+        let hash = gene.gene_hash();
+        self.blobs.insert(hash, gene);
+        format!("ipfs://{}", to_hex(&hash.0))
+    }
+
+    /// Fetches the bytecode for a verified `Wasm_Gene_Hash`.
+    pub fn fetch(&self, gene_hash: &GeneHandle) -> Option<GenePayload> {
+        self.fetch_calls.set(self.fetch_calls.get() + 1);
+        self.blobs.get(gene_hash).cloned()
+    }
+
+    pub fn fetch_calls(&self) -> u32 {
+        self.fetch_calls.get()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +243,36 @@ mod tests {
 
         let entry = registry.get(&vssadmin_trajectory().threat_id()).unwrap();
         assert_eq!(entry.confidence_score, 1);
+    }
+
+    fn sample_gene() -> GenePayload {
+        use crate::evolution::alleles::Allele;
+        GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] }
+    }
+
+    #[test]
+    fn genome_registry_resolves_a_published_cure_on_demand() {
+        let threat_id = vssadmin_trajectory().threat_id();
+        let mut ipfs = MockIpfsStore::new();
+        let uri = ipfs.store(sample_gene());
+
+        let mut genome = GenomeRegistry::new();
+        genome.publish(threat_id, sample_gene().gene_hash(), uri);
+
+        let entry = genome.get(&threat_id).unwrap();
+        assert_eq!(entry.epigenetic_status, EpigeneticStatus::Active);
+        assert_eq!(ipfs.fetch(&entry.gene_hash).unwrap(), sample_gene());
+    }
+
+    #[test]
+    fn suppressed_gene_is_flagged_and_never_needs_a_fetch_to_tell() {
+        let threat_id = vssadmin_trajectory().threat_id();
+        let mut genome = GenomeRegistry::new();
+        genome.publish(threat_id, sample_gene().gene_hash(), "ipfs://unused".into());
+
+        genome.suppress(&threat_id);
+
+        let entry = genome.get(&threat_id).unwrap();
+        assert_eq!(entry.epigenetic_status, EpigeneticStatus::Suppressed);
     }
 }

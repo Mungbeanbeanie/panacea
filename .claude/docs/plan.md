@@ -124,12 +124,12 @@ Wave 3 (integration):               [9]←6,3    [8]←6,7
 ## Phase 6 — Genome Registry (Ledger 3) & the Pharmacy Flow
 **Owner:** B · **Depends on:** 0, **5** · **Parallel-safe:** after 5 · **Decouple via:** mock gene payloads
 
-- [ ] Mapping `Threat_ID → Wasm_Gene_Hash`
-- [ ] `IPFS_URI` for the compiled gene binary (mock IPFS store OK)
-- [ ] `Epigenetic_Status` flag (0 active / 1 suppressed)
-- [ ] Soldier queries Ledger 3 **on demand** by `Threat_ID` (never a passive scan)
-- [ ] Verify `Wasm_Gene_Hash` against the State Ledger Merkle root before use
-- [ ] Fetch bytecode from IPFS → run in sandbox → apoptosis
+- [x] Mapping `Threat_ID → Wasm_Gene_Hash`
+- [x] `IPFS_URI` for the compiled gene binary (mock IPFS store OK)
+- [x] `Epigenetic_Status` flag (0 active / 1 suppressed)
+- [x] Soldier queries Ledger 3 **on demand** by `Threat_ID` (never a passive scan)
+- [x] Verify `Wasm_Gene_Hash` against the State Ledger Merkle root before use
+- [x] Fetch bytecode from IPFS → run in sandbox → apoptosis
 
 **Done when:** a Soldier resolves `Threat_ID` → verified gene → runs in-sandbox → apoptosis.
 

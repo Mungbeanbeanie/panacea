@@ -235,3 +235,203 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 }
+//!
+//! The full dormant-spore lifecycle (wake signal, apoptosis re-serialization) is Phase 3
+//! and not yet built. [`resolve_and_run`] is the Pharmacy Flow slice of a Soldier that
+//! Phase 6 needs: given a `Threat_ID` it already has (from a wake signal), resolve the cure
+//! from the Genome Registry, verify it, run it in-sandbox, and undergo apoptosis.
+
+use crate::core::ThreatId;
+use crate::evolution::sandbox::{Sandbox, TrialOutcome};
+use crate::ledger::registry::{EpigeneticStatus, GenomeRegistry, MockIpfsStore};
+use crate::ledger::state::{MerkleProof, StateLedger};
+
+/// Outcome of a Soldier's resolve → verify → fetch → execute → apoptosis run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PharmacyOutcome {
+    /// No Genome Registry row for this `Threat_ID` yet.
+    NoCureAvailable,
+    /// `Epigenetic_Status = 1` — halted before any fetch or execution.
+    Suppressed,
+    /// The claimed `Wasm_Gene_Hash` didn't verify against the State Ledger Merkle root.
+    GeneHashUnverified,
+    /// Gene ran in-sandbox but didn't neutralize the target; apoptosis still follows.
+    Ineffective,
+    /// Gene neutralized the target in-sandbox; apoptosis follows.
+    Neutralized,
+}
+
+/// Resolves `threat_id` against the Genome Registry **on demand** (never a passive scan),
+/// checks `Epigenetic_Status` *before* touching IPFS or the sandbox, verifies the claimed
+/// `Wasm_Gene_Hash` against the State Ledger's Merkle root, fetches the bytecode, runs it
+/// in-sandbox, and undergoes apoptosis — the sandbox is torn down before returning either way.
+pub fn resolve_and_run(
+    threat_id: &ThreatId,
+    genome_registry: &GenomeRegistry,
+    ipfs: &MockIpfsStore,
+    state_ledger: &StateLedger,
+    gene_proof: &MerkleProof,
+    mut sandbox: Sandbox,
+) -> PharmacyOutcome {
+    let Some(entry) = genome_registry.get(threat_id) else {
+        return PharmacyOutcome::NoCureAvailable;
+    };
+
+    if entry.epigenetic_status == EpigeneticStatus::Suppressed {
+        return PharmacyOutcome::Suppressed;
+    }
+
+    if !state_ledger.verify_gene(entry.gene_hash.0, gene_proof) {
+        return PharmacyOutcome::GeneHashUnverified;
+    }
+
+    let Some(gene) = ipfs.fetch(&entry.gene_hash) else {
+        return PharmacyOutcome::NoCureAvailable;
+    };
+
+    let outcome = sandbox.run(&gene.sequence);
+    sandbox.teardown(); // apoptosis
+
+    match outcome {
+        TrialOutcome::TargetCrashed => PharmacyOutcome::Neutralized,
+        TrialOutcome::TargetSurvived | TrialOutcome::HostDestabilized => {
+            PharmacyOutcome::Ineffective
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::evolution::alleles::{Allele, GenePayload};
+    use crate::evolution::sandbox::FrozenProcess;
+    use crate::ledger::client::MockConjugationLink;
+    use crate::ledger::registry::BehavioralSchema;
+
+    fn winning_gene() -> GenePayload {
+        GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] }
+    }
+
+    fn mock_sandbox() -> Sandbox {
+        Sandbox::spawn(FrozenProcess { pid: 4242, memory: vec![] })
+    }
+
+    fn sample_threat_id() -> ThreatId {
+        BehavioralSchema(vec!["vssadmin".into()]).threat_id()
+    }
+
+    #[test]
+    fn resolves_verifies_and_neutralizes_then_apoptoses() {
+        let threat_id = sample_threat_id();
+        let gene = winning_gene();
+
+        let mut ipfs = MockIpfsStore::new();
+        let uri = ipfs.store(gene.clone());
+
+        let mut genome = GenomeRegistry::new();
+        genome.publish(threat_id, gene.gene_hash(), uri);
+
+        let mut link = MockConjugationLink::new();
+        let header = link.commit_block(vec![], vec![gene.gene_hash().0], vec!["v1".into()], 0);
+        let mut state_ledger = StateLedger::new();
+        state_ledger.adopt(header);
+        let gene_proof = link.genome_proof(0).unwrap();
+
+        let outcome = resolve_and_run(
+            &threat_id,
+            &genome,
+            &ipfs,
+            &state_ledger,
+            &gene_proof,
+            mock_sandbox(),
+        );
+        assert_eq!(outcome, PharmacyOutcome::Neutralized);
+    }
+
+    #[test]
+    fn suppressed_gene_is_halted_before_any_fetch() {
+        let threat_id = sample_threat_id();
+        let gene = winning_gene();
+
+        let mut ipfs = MockIpfsStore::new();
+        let uri = ipfs.store(gene.clone());
+
+        let mut genome = GenomeRegistry::new();
+        genome.publish(threat_id, gene.gene_hash(), uri);
+        genome.suppress(&threat_id);
+
+        let mut link = MockConjugationLink::new();
+        let header = link.commit_block(vec![], vec![gene.gene_hash().0], vec!["v1".into()], 0);
+        let mut state_ledger = StateLedger::new();
+        state_ledger.adopt(header);
+        let gene_proof = link.genome_proof(0).unwrap();
+
+        let outcome = resolve_and_run(
+            &threat_id,
+            &genome,
+            &ipfs,
+            &state_ledger,
+            &gene_proof,
+            mock_sandbox(),
+        );
+
+        assert_eq!(outcome, PharmacyOutcome::Suppressed);
+        assert_eq!(ipfs.fetch_calls(), 0, "must not fetch a suppressed gene");
+    }
+
+    #[test]
+    fn unverified_gene_hash_is_rejected() {
+        let threat_id = sample_threat_id();
+        let gene = winning_gene();
+
+        let mut ipfs = MockIpfsStore::new();
+        let uri = ipfs.store(gene.clone());
+
+        let mut genome = GenomeRegistry::new();
+        genome.publish(threat_id, gene.gene_hash(), uri);
+
+        // Commit a block whose genome root does NOT include this gene's hash.
+        let mut link = MockConjugationLink::new();
+        let header = link.commit_block(vec![], vec![[0xEE; 32]], vec!["v1".into()], 0);
+        let mut state_ledger = StateLedger::new();
+        state_ledger.adopt(header);
+        let bogus_proof = link.genome_proof(0).unwrap();
+
+        let outcome = resolve_and_run(
+            &threat_id,
+            &genome,
+            &ipfs,
+            &state_ledger,
+            &bogus_proof,
+            mock_sandbox(),
+        );
+
+        assert_eq!(outcome, PharmacyOutcome::GeneHashUnverified);
+        assert_eq!(ipfs.fetch_calls(), 0, "must verify before fetching");
+    }
+
+    #[test]
+    fn unknown_threat_id_has_no_cure() {
+        let threat_id = sample_threat_id();
+        let genome = GenomeRegistry::new();
+        let ipfs = MockIpfsStore::new();
+
+        let mut link = MockConjugationLink::new();
+        let header = link.commit_block(vec![], vec![[0x11; 32]], vec!["v1".into()], 0);
+        let mut state_ledger = StateLedger::new();
+        state_ledger.adopt(header);
+        let gene_proof = link.genome_proof(0).unwrap();
+
+        let outcome = resolve_and_run(
+            &threat_id,
+            &genome,
+            &ipfs,
+            &state_ledger,
+            &gene_proof,
+            mock_sandbox(),
+        );
+
+        assert_eq!(outcome, PharmacyOutcome::NoCureAvailable);
+        assert_eq!(ipfs.fetch_calls(), 0);
+    }
+}
