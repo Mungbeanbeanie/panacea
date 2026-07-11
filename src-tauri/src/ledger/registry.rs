@@ -107,6 +107,15 @@ pub enum EpigeneticStatus {
     Suppressed,
 }
 
+/// An Epigenetic Suppressor Token: the network broadcast that trips the kill-switch. It names
+/// the `Threat_ID` whose cure must stop expressing; a node applies it with
+/// [`GenomeRegistry::apply_suppressor`]. Broadcast/receipt rides the conjugation transport
+/// (see ../client.rs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuppressorToken {
+    pub threat_id: ThreatId,
+}
+
 /// One row of the Genome Registry: the cure for a `Threat_ID`.
 #[derive(Debug, Clone)]
 pub struct GenomeEntry {
@@ -132,7 +141,11 @@ impl GenomeRegistry {
     pub fn publish(&mut self, threat_id: ThreatId, gene_hash: GeneHandle, ipfs_uri: String) {
         self.entries.insert(
             threat_id,
-            GenomeEntry { gene_hash, ipfs_uri, epigenetic_status: EpigeneticStatus::Active },
+            GenomeEntry {
+                gene_hash,
+                ipfs_uri,
+                epigenetic_status: EpigeneticStatus::Active,
+            },
         );
     }
 
@@ -147,6 +160,12 @@ impl GenomeRegistry {
         if let Some(entry) = self.entries.get_mut(threat_id) {
             entry.epigenetic_status = EpigeneticStatus::Suppressed;
         }
+    }
+
+    /// Applies a received [`SuppressorToken`], flipping the named gene to suppressed. A no-op
+    /// if the gene isn't in this local cache — there's nothing being expressed to halt.
+    pub fn apply_suppressor(&mut self, token: &SuppressorToken) {
+        self.suppress(&token.threat_id);
     }
 }
 
@@ -247,7 +266,9 @@ mod tests {
 
     fn sample_gene() -> GenePayload {
         use crate::evolution::alleles::Allele;
-        GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] }
+        GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        }
     }
 
     #[test]

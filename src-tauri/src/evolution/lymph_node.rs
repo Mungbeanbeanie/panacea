@@ -23,10 +23,22 @@ pub struct WhitelistedApp {
 
 /// Mock subset of the Top-5,000 regression matrix.
 pub const TOP_APPS: [WhitelistedApp; 4] = [
-    WhitelistedApp { name: "Chrome", allergic_to: None },
-    WhitelistedApp { name: "VS Code", allergic_to: None },
-    WhitelistedApp { name: "Slack", allergic_to: None },
-    WhitelistedApp { name: "LegacyBackupAgent", allergic_to: Some(Allele::Allele09) },
+    WhitelistedApp {
+        name: "Chrome",
+        allergic_to: None,
+    },
+    WhitelistedApp {
+        name: "VS Code",
+        allergic_to: None,
+    },
+    WhitelistedApp {
+        name: "Slack",
+        allergic_to: None,
+    },
+    WhitelistedApp {
+        name: "LegacyBackupAgent",
+        allergic_to: Some(Allele::Allele09),
+    },
 ];
 
 /// Result of replaying a candidate gene against the Lymph Node's crowded environment.
@@ -72,18 +84,25 @@ mod tests {
     #[test]
     fn gene_that_breaks_a_whitelisted_app_is_flagged_and_dropped() {
         let lymph_node = LymphNode::standard_environment();
-        let gene = GenePayload { sequence: vec![Allele::Allele09] };
+        let gene = GenePayload {
+            sequence: vec![Allele::Allele09],
+        };
 
         let outcome = lymph_node.run_regression(&gene);
 
-        assert_eq!(outcome, RegressionOutcome::AllergyFlagged("LegacyBackupAgent"));
+        assert_eq!(
+            outcome,
+            RegressionOutcome::AllergyFlagged("LegacyBackupAgent")
+        );
     }
 
     #[test]
     fn gene_the_whitelisted_apps_tolerate_passes() {
         let lymph_node = LymphNode::standard_environment();
         // The Stage-2 fuzz winner (Allele04 + Allele12) touches no allergic allele.
-        let gene = GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] };
+        let gene = GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        };
 
         assert_eq!(lymph_node.run_regression(&gene), RegressionOutcome::Passed);
     }

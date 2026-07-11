@@ -160,7 +160,23 @@ fn suspend(pid: Pid) {
 #[cfg(not(unix))]
 fn suspend(_pid: Pid) {}
 
-/// PoC behavior source: replays a fixed A→B→C script against one real target PID, then goes
+/// The scripted trajectory the PoC target performs — A → B → C, summing 20 + 50 + 40 = 110,
+/// crossing the 100-pt threshold on the third action. Shared so the demo pharmacy can publish
+/// a cure under the same `Threat_ID` the Scout will emit for it.
+pub const SCRIPTED_TRAJECTORY: [Action; 3] = [
+    Action::HiddenChildFromTemp,
+    Action::NetEnumWithVssTamper,
+    Action::HighEntropyFileLoop,
+];
+
+/// The `Threat_ID` the Scout emits for [`SCRIPTED_TRAJECTORY`].
+pub fn scripted_threat_id() -> ThreatId {
+    threat_id(&BehavioralSchema {
+        actions: SCRIPTED_TRAJECTORY.to_vec(),
+    })
+}
+
+/// PoC behavior source: replays [`SCRIPTED_TRAJECTORY`] against one real target PID, then goes
 /// quiet. One action per tick, so the trajectory climbs 20 → 70 → 110 and fires on the third.
 pub struct ScriptedSource {
     target: Pid,
@@ -174,12 +190,7 @@ impl ScriptedSource {
     pub fn spawn_target() -> std::io::Result<(Self, std::process::Child)> {
         let child = std::process::Command::new("sleep").arg("600").spawn()?;
         let target = child.id();
-        let script = vec![
-            Action::HiddenChildFromTemp,
-            Action::NetEnumWithVssTamper,
-            Action::HighEntropyFileLoop,
-        ]
-        .into_iter();
+        let script = SCRIPTED_TRAJECTORY.to_vec().into_iter();
         Ok((Self { target, script }, child))
     }
 }
@@ -199,13 +210,43 @@ impl BehaviorSource for ScriptedSource {
 /// PoC demo entry point: wire a scripted target and stub Soldier / Ledger-2 consumers, then
 /// run the Scout. The stub consumers log what the Scout emits until Phases 2–3 replace them.
 pub fn spawn_demo() -> JoinHandle<()> {
+    use super::soldier::Pharmacy;
+    use crate::evolution::alleles::{Allele, GenePayload};
+    use crate::ledger::client::MockConjugationLink;
+    use crate::ledger::registry::{GenomeRegistry, MockIpfsStore, SuppressorToken};
+    use crate::ledger::state::StateLedger;
+
     let (wake_tx, wake_rx) = channel::<WakeSignal>();
     let (threat_tx, threat_rx) = channel::<ThreatReport>();
 
-    // Real Soldier consumes the wake channel (Phase 3): each threshold cross spins up a
-    // Soldier that acts and re-serializes to a spore.
+    // Demo pharmacy: publish the cure for the scripted trajectory, commit its hash to the
+    // State Ledger, then broadcast an Epigenetic Suppressor Token — so the live wake
+    // demonstrates the kill-switch halting the cure before any fetch/exec (Phase 9).
+    let threat_id = scripted_threat_id();
+    let gene = GenePayload {
+        sequence: vec![Allele::Allele04, Allele::Allele12],
+    };
+    let gene_hash = gene.gene_hash();
+    let mut ipfs = MockIpfsStore::new();
+    let uri = ipfs.store(gene);
+    let mut genome = GenomeRegistry::new();
+    genome.publish(threat_id, gene_hash, uri);
+    let mut link = MockConjugationLink::new();
+    let header = link.commit_block(vec![], vec![gene_hash.0], vec!["validator-1".into()], 0);
+    let mut state = StateLedger::new();
+    state.adopt(header);
+    link.broadcast_suppressor(SuppressorToken { threat_id });
+    let pharmacy = Pharmacy {
+        genome,
+        ipfs,
+        state,
+        link,
+    };
+
+    // Real Soldier consumes the wake channel against the pharmacy: Phase-3 spore lifecycle +
+    // Phase-6 pharmacy resolution + Phase-9 kill-switch.
     let spore_path = std::env::temp_dir().join("bio-digital-defense.spore");
-    super::soldier::run(wake_rx, spore_path);
+    super::soldier::run(wake_rx, spore_path, pharmacy);
     thread::spawn(move || {
         for report in threat_rx {
             println!(

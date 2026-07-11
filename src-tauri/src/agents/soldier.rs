@@ -84,16 +84,6 @@ impl Soldier {
         }
     }
 
-    /// Remediation seam. Phase 4 (sandbox + fuzz) / Phase 6 (verified gene) plug in here, and
-    /// the Epigenetic_Status check (Phase 9) goes *before* any gene fetch/exec at that point.
-    /// Mocked now: logs only, kills nothing.
-    fn neutralize(&self) {
-        println!(
-            "[soldier] neutralize (mock) pid {} rss {} KiB",
-            self.clone.pid, self.clone.rss_kib
-        );
-    }
-
     /// Apoptosis: re-serialize to a passive spore (generation + 1), then drop self.
     fn apoptosis(self, path: &Path) -> std::io::Result<Spore> {
         let next = Spore {
@@ -140,28 +130,39 @@ fn release_target(pid: Pid) {
 #[cfg(not(unix))]
 fn release_target(_pid: Pid) {}
 
-/// Full lifecycle for one wake: load spore → wake + clone → act → demo-release → apoptosis.
-pub fn handle_wake(signal: &WakeSignal, spore_path: &Path) -> std::io::Result<Spore> {
+/// Full lifecycle for one wake: load spore → wake + clone → dispense the cure through the
+/// pharmacy (epigenetic kill-switch checked first) → demo-release the frozen target →
+/// apoptosis. Returns the re-serialized spore and the cure outcome.
+pub fn handle_wake(
+    signal: &WakeSignal,
+    spore_path: &Path,
+    pharmacy: &mut Pharmacy,
+) -> std::io::Result<(Spore, PharmacyOutcome)> {
     let spore = Spore::load_or_dormant(spore_path);
     let soldier = Soldier::wake(spore, signal);
-    soldier.neutralize();
-    release_target(soldier.pid); // demo cleanup (guarded); Phase 4/6 replace with the real gene
-    soldier.apoptosis(spore_path)
+    let outcome = soldier.dispense(&signal.threat_id, pharmacy);
+    release_target(soldier.pid); // demo cleanup: unfreeze/terminate the scripted helper
+    let spore = soldier.apoptosis(spore_path)?;
+    Ok((spore, outcome))
 }
 
 /// Run the Soldier as the consumer of the Scout's wake channel (replaces the Phase-1 stub).
 ///
-/// Loops for the channel's lifetime; each `WakeSignal` runs one full spore lifecycle.
-pub fn run(wake_rx: Receiver<WakeSignal>, spore_path: std::path::PathBuf) -> JoinHandle<()> {
+/// Loops for the channel's lifetime; each `WakeSignal` runs one full spore lifecycle against
+/// the shared `pharmacy` — resolving and dispensing the cure, with the epigenetic kill-switch
+/// checked before any fetch/exec.
+pub fn run(
+    wake_rx: Receiver<WakeSignal>,
+    spore_path: std::path::PathBuf,
+    mut pharmacy: Pharmacy,
+) -> JoinHandle<()> {
     thread::spawn(move || {
         for signal in wake_rx {
-            match handle_wake(&signal, &spore_path) {
-                Ok(spore) => {
-                    println!(
-                        "[soldier] apoptosis → spore generation {}",
-                        spore.generation()
-                    )
-                }
+            match handle_wake(&signal, &spore_path, &mut pharmacy) {
+                Ok((spore, outcome)) => println!(
+                    "[soldier] cure {outcome:?}; apoptosis → spore generation {}",
+                    spore.generation()
+                ),
                 Err(e) => eprintln!("[soldier] apoptosis failed: {e}"),
             }
         }
@@ -184,7 +185,8 @@ mod tests {
             pid: std::process::id(),
         };
 
-        let spore = handle_wake(&signal, &path).expect("handle_wake");
+        let mut pharmacy = Pharmacy::empty();
+        let (spore, _) = handle_wake(&signal, &path, &mut pharmacy).expect("handle_wake");
         assert_eq!(
             spore.generation(),
             1,
@@ -193,7 +195,7 @@ mod tests {
         assert!(path.exists(), "spore re-serialized to disk");
 
         // A second wake loads generation 1 and re-serializes as 2.
-        let spore2 = handle_wake(&signal, &path).expect("handle_wake again");
+        let (spore2, _) = handle_wake(&signal, &path, &mut pharmacy).expect("handle_wake again");
         assert_eq!(spore2.generation(), 2);
 
         let _ = std::fs::remove_file(&path);
@@ -223,7 +225,8 @@ mod tests {
             pid,
         };
 
-        let spore = handle_wake(&signal, &path).expect("handle_wake");
+        let mut pharmacy = Pharmacy::empty();
+        let (spore, _) = handle_wake(&signal, &path, &mut pharmacy).expect("handle_wake");
         assert_eq!(spore.generation(), 1);
         assert!(path.exists());
 
@@ -237,7 +240,8 @@ mod tests {
 }
 
 use crate::core::ThreatId;
-use crate::evolution::sandbox::{Sandbox, TrialOutcome};
+use crate::evolution::sandbox::{FrozenProcess, Sandbox, TrialOutcome};
+use crate::ledger::client::MockConjugationLink;
 use crate::ledger::registry::{EpigeneticStatus, GenomeRegistry, MockIpfsStore};
 use crate::ledger::state::{MerkleProof, StateLedger};
 
@@ -295,6 +299,65 @@ pub fn resolve_and_run(
     }
 }
 
+/// The local pharmacy a running Soldier consults: the Genome Registry (Ledger 3), the mock
+/// IPFS store, the State Ledger (Ledger 1) it verifies gene hashes against, and the
+/// conjugation link it receives Epigenetic Suppressor Tokens over.
+pub struct Pharmacy {
+    pub genome: GenomeRegistry,
+    pub ipfs: MockIpfsStore,
+    pub state: StateLedger,
+    pub link: MockConjugationLink,
+}
+
+impl Pharmacy {
+    /// An empty pharmacy — no cures published, nothing committed, no tokens pending.
+    pub fn empty() -> Self {
+        Self {
+            genome: GenomeRegistry::new(),
+            ipfs: MockIpfsStore::new(),
+            state: StateLedger::new(),
+            link: MockConjugationLink::new(),
+        }
+    }
+
+    /// Absorb any Epigenetic Suppressor Tokens broadcast over the link since the last check —
+    /// the kill-switch arriving from the network — applying each to the local Genome Registry.
+    fn absorb_suppressors(&mut self) {
+        for token in self.link.drain_suppressors() {
+            self.genome.apply_suppressor(&token);
+        }
+    }
+}
+
+impl Soldier {
+    /// Dispense the cure for `threat_id` through the full pharmacy flow: absorb any suppressor
+    /// tokens first, then resolve → **kill-switch check** → Merkle-verify → fetch → run
+    /// in-sandbox. The PoC pharmacy holds a single committed gene at genome index 0.
+    fn dispense(&self, threat_id: &ThreatId, pharmacy: &mut Pharmacy) -> PharmacyOutcome {
+        pharmacy.absorb_suppressors();
+        println!(
+            "[soldier] dispensing for pid {} (cloned rss {} KiB)",
+            self.clone.pid, self.clone.rss_kib
+        );
+        // Proof for the single committed gene (index 0); no committed block ⇒ no cure to run.
+        let Some(gene_proof) = pharmacy.link.genome_proof(0) else {
+            return PharmacyOutcome::NoCureAvailable;
+        };
+        let sandbox = Sandbox::spawn(FrozenProcess {
+            pid: self.clone.pid,
+            memory: Vec::new(),
+        });
+        resolve_and_run(
+            threat_id,
+            &pharmacy.genome,
+            &pharmacy.ipfs,
+            &pharmacy.state,
+            &gene_proof,
+            sandbox,
+        )
+    }
+}
+
 #[cfg(test)]
 mod pharmacy_flow_tests {
     use super::*;
@@ -304,11 +367,16 @@ mod pharmacy_flow_tests {
     use crate::ledger::registry::BehavioralSchema;
 
     fn winning_gene() -> GenePayload {
-        GenePayload { sequence: vec![Allele::Allele04, Allele::Allele12] }
+        GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        }
     }
 
     fn mock_sandbox() -> Sandbox {
-        Sandbox::spawn(FrozenProcess { pid: 4242, memory: vec![] })
+        Sandbox::spawn(FrozenProcess {
+            pid: 4242,
+            memory: vec![],
+        })
     }
 
     fn sample_threat_id() -> ThreatId {
@@ -428,5 +496,71 @@ mod pharmacy_flow_tests {
 
         assert_eq!(outcome, PharmacyOutcome::NoCureAvailable);
         assert_eq!(ipfs.fetch_calls(), 0);
+    }
+}
+
+#[cfg(test)]
+mod live_dispense_tests {
+    use super::*;
+    use crate::evolution::alleles::{Allele, GenePayload};
+    use crate::ledger::registry::SuppressorToken;
+
+    fn seeded_pharmacy(threat_id: ThreatId) -> Pharmacy {
+        let gene = GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        };
+        let gene_hash = gene.gene_hash();
+        let mut ipfs = MockIpfsStore::new();
+        let uri = ipfs.store(gene);
+        let mut genome = GenomeRegistry::new();
+        genome.publish(threat_id, gene_hash, uri);
+        let mut link = MockConjugationLink::new();
+        let header = link.commit_block(vec![], vec![gene_hash.0], vec!["v1".into()], 0);
+        let mut state = StateLedger::new();
+        state.adopt(header);
+        Pharmacy {
+            genome,
+            ipfs,
+            state,
+            link,
+        }
+    }
+
+    fn woken_soldier(threat_id: ThreatId) -> Soldier {
+        // Own PID so the release path is guarded off; dispense doesn't release anyway.
+        Soldier::wake(
+            Spore::dormant(),
+            &WakeSignal {
+                threat_id,
+                pid: std::process::id(),
+            },
+        )
+    }
+
+    #[test]
+    fn active_cure_is_dispensed_in_sandbox() {
+        let threat_id = ThreatId([3u8; 32]);
+        let mut pharmacy = seeded_pharmacy(threat_id);
+        let outcome = woken_soldier(threat_id).dispense(&threat_id, &mut pharmacy);
+        assert_eq!(outcome, PharmacyOutcome::Neutralized);
+    }
+
+    #[test]
+    fn broadcast_suppressor_halts_the_live_cure_before_fetch() {
+        let threat_id = ThreatId([3u8; 32]);
+        let mut pharmacy = seeded_pharmacy(threat_id);
+
+        // The kill-switch arrives over the wire before the Soldier dispenses.
+        pharmacy
+            .link
+            .broadcast_suppressor(SuppressorToken { threat_id });
+
+        let outcome = woken_soldier(threat_id).dispense(&threat_id, &mut pharmacy);
+        assert_eq!(outcome, PharmacyOutcome::Suppressed);
+        assert_eq!(
+            pharmacy.ipfs.fetch_calls(),
+            0,
+            "a suppressed cure must never be fetched"
+        );
     }
 }
