@@ -23,8 +23,8 @@ lies about what it does. Keep the safety story honest and simple.
   [`suppression-path-test`](../skills/suppression-path-test/SKILL.md) check passing.
 - **Verify before trusting the network.** Every threat and gene account is read from Solana
   at `finalized` (or at minimum `confirmed`) commitment — don't trust an unconfirmed read.
-  Every gene binary fetched from IPFS by `IPFS_CID` gets its hash checked against the
-  on-chain `Wasm_Gene_Hash` before a Soldier runs it. Don't skip either check and pretend.
+  Every gene's on-chain `gene_seq` bytes get their hash checked against the account's own
+  `Wasm_Gene_Hash` before a Soldier runs it. Don't skip either check and pretend.
 - **Devnet keys are still real keys.** Endpoint and Lymph Node keypairs sign real devnet
   transactions. Never commit a keypair file to the repo, even though devnet SOL has no
   value — treat key hygiene the same way you would for mainnet. Losing or leaking a Lymph

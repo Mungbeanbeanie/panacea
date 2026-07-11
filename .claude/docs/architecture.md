@@ -21,6 +21,6 @@ The system has four moving parts:
   seconds, without forking the chain.
 
 For a hackathon PoC, model each stage faithfully and show it working end-to-end on a real
-Solana devnet backbone — chain, consensus finality, on-chain program, and IPFS gene storage
-are real; only the malware/virus and the MicroVM/Wasm sandbox host stay simulated. See
-[Security & Safety](security.md).
+Solana devnet backbone — chain, consensus finality, and the on-chain program (gene bytes
+included — no off-chain gene storage) are real; only the malware/virus and the MicroVM/Wasm
+sandbox host stay simulated. See [Security & Safety](security.md).

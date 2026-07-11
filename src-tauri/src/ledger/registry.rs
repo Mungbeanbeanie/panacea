@@ -3,10 +3,12 @@
 //! moved to `../ipfs.rs` (Q6).
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 pub use bio_digital_defense::{GenomeEntry, ThreatEntry};
 
 use crate::core::ThreatId;
+use crate::evolution::alleles::GenePayload;
 use crate::ledger::state::SolanaLightClient;
 use crate::ledger::LedgerError;
 
@@ -15,6 +17,13 @@ use crate::ledger::LedgerError;
 /// tests without hitting devnet.
 pub trait GenomeSource: Send {
     fn get(&self, threat_id: &ThreatId) -> Result<Option<GenomeEntry>, LedgerError>;
+}
+
+/// The gene-publishing boundary the Phase-12 evolve-and-commit flow depends on
+/// (`agents::soldier::evolve_and_commit`) — a real `SolanaGeneCommitter` (`../client.rs`)
+/// backs the live path; `SharedFakeLedger` backs the offline tests.
+pub trait GeneCommitter: Send {
+    fn commit_gene(&self, threat_id: &ThreatId, gene: &GenePayload) -> Result<(), LedgerError>;
 }
 
 /// Read-through wrapper over the Genome Registry PDA — "cache" means "the read path," not
@@ -71,13 +80,13 @@ impl FakeGenomeSource {
 
     /// Publishes a cure for `threat_id`, starting `Active` — mirrors
     /// `GenomeRegistry::publish()` in the old mock.
-    pub fn publish(&mut self, threat_id: ThreatId, gene_hash: [u8; 32], ipfs_cid: String) {
+    pub fn publish(&mut self, threat_id: ThreatId, gene: &GenePayload) {
         self.entries.insert(
             threat_id,
             GenomeEntry {
                 threat_id: threat_id.0,
-                gene_hash,
-                ipfs_cid,
+                gene_hash: gene.gene_hash().0,
+                gene_seq: gene.to_bytes(),
                 epigenetic_status: 0,
                 bump: 0,
             },
@@ -90,10 +99,57 @@ impl FakeGenomeSource {
             entry.epigenetic_status = 1;
         }
     }
+
+    /// Inserts a `gene_hash`/`gene_seq` pair without requiring they actually match —
+    /// `publish()` always computes a consistent pair, so tests that need to model corrupt
+    /// on-chain data (mismatched hash) go through this instead.
+    pub fn publish_raw(&mut self, threat_id: ThreatId, gene_hash: [u8; 32], gene_seq: Vec<u8>) {
+        self.entries.insert(
+            threat_id,
+            GenomeEntry {
+                threat_id: threat_id.0,
+                gene_hash,
+                gene_seq,
+                epigenetic_status: 0,
+                bump: 0,
+            },
+        );
+    }
 }
 
 impl GenomeSource for FakeGenomeSource {
     fn get(&self, threat_id: &ThreatId) -> Result<Option<GenomeEntry>, LedgerError> {
         Ok(self.entries.get(threat_id).cloned())
+    }
+}
+
+/// Offline test double spanning both pharmacy boundaries at once: implements both
+/// `GenomeSource` and `GeneCommitter` over one shared `FakeGenomeSource`, so a test can
+/// exercise the full evolve → commit → re-read loop (`agents::soldier::evolve_and_commit`)
+/// without devnet — a commit through one handle is immediately visible through the other,
+/// the way a real commit_gene transaction becomes visible to the next RPC read.
+#[derive(Clone, Default)]
+pub struct SharedFakeLedger(Arc<Mutex<FakeGenomeSource>>);
+
+impl SharedFakeLedger {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn suppress(&self, threat_id: &ThreatId) {
+        self.0.lock().unwrap().suppress(threat_id);
+    }
+}
+
+impl GenomeSource for SharedFakeLedger {
+    fn get(&self, threat_id: &ThreatId) -> Result<Option<GenomeEntry>, LedgerError> {
+        self.0.lock().unwrap().get(threat_id)
+    }
+}
+
+impl GeneCommitter for SharedFakeLedger {
+    fn commit_gene(&self, threat_id: &ThreatId, gene: &GenePayload) -> Result<(), LedgerError> {
+        self.0.lock().unwrap().publish(*threat_id, gene);
+        Ok(())
     }
 }

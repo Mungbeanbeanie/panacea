@@ -12,7 +12,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x");
+declare_id!("5r6fERX6CtJ8RHzpf5wLtY1SfptV8rk4JEHfu6yh5WZV");
 
 #[program]
 pub mod bio_digital_defense {
@@ -38,9 +38,9 @@ pub mod bio_digital_defense {
         ctx: Context<CommitGene>,
         threat_id: [u8; 32],
         gene_hash: [u8; 32],
-        ipfs_cid: String,
+        gene_seq: Vec<u8>,
     ) -> Result<()> {
-        crate::instructions::commit_gene::handle_commit_gene(ctx, threat_id, gene_hash, ipfs_cid)
+        crate::instructions::commit_gene::handle_commit_gene(ctx, threat_id, gene_hash, gene_seq)
     }
 
     /// Epigenetic Suppressor Token: flips `Epigenetic_Status` to 1 on an existing Genome

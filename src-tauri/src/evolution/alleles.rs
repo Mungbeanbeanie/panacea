@@ -13,15 +13,21 @@ use crate::evolution::sandbox::{Sandbox, TrialOutcome};
 /// `Allele12` (IPC Pipe Buffer Overflow) is the combo that reliably kills the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Allele {
-    Allele04,
-    Allele12,
+    Allele04 = 0,
+    Allele12 = 1,
     /// Deliberately too aggressive — destabilizes the mock host, so the fuzz driver must
     /// reject any combo containing it even when the target crashes.
-    Allele09,
+    Allele09 = 2,
 }
 
 impl Allele {
     pub const CATALOG: [Allele; 3] = [Allele::Allele04, Allele::Allele12, Allele::Allele09];
+
+    /// Decodes one byte of an on-chain `gene_seq` back into an allele, via the catalog
+    /// rather than a separate match arm — the two can't drift out of sync.
+    fn from_byte(byte: u8) -> Option<Self> {
+        Self::CATALOG.iter().find(|allele| **allele as u8 == byte).copied()
+    }
 }
 
 /// Compiled winning allele sequence: the Wasm Gene Payload a Soldier writes to the Genome
@@ -39,6 +45,23 @@ impl GenePayload {
             hasher.update([*allele as u8]);
         }
         GeneHandle(hasher.finalize().into())
+    }
+
+    /// Encodes the sequence as raw bytes for the Genome Registry's `gene_seq` field — the
+    /// gene's on-chain wire format now that it's stored directly in the account.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.sequence.iter().map(|allele| *allele as u8).collect()
+    }
+
+    /// Decodes a `gene_seq` account field back into a runnable sequence. `None` if any byte
+    /// isn't a known allele (corrupt/foreign data).
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let sequence = bytes
+            .iter()
+            .copied()
+            .map(Allele::from_byte)
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self { sequence })
     }
 }
 
@@ -86,6 +109,20 @@ mod tests {
         });
         let gene = fuzz(&mut sandbox).expect("fuzz driver should find a winning combo");
         assert_eq!(gene.sequence, vec![Allele::Allele04, Allele::Allele12]);
+    }
+
+    #[test]
+    fn gene_bytes_round_trip() {
+        let gene = GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        };
+        let decoded = GenePayload::from_bytes(&gene.to_bytes()).expect("valid bytes decode");
+        assert_eq!(decoded, gene);
+    }
+
+    #[test]
+    fn corrupt_gene_bytes_fail_to_decode() {
+        assert!(GenePayload::from_bytes(&[0xFF]).is_none());
     }
 
     #[test]

@@ -214,35 +214,51 @@ modules proven only by their own tests — the *live* demo path (`agents/scout.r
 skips them, and the dashboard never receives a real event. These are the remaining gaps
 between "each phase works in isolation" and "the program is fully implemented."
 
-- [ ] **Dashboard gets real events.** No `emit` exists anywhere in `src-tauri/` — inside the
+- [x] **Dashboard gets real events.** No `emit` exists anywhere in `src-tauri/` — inside the
       Tauri app all three views sit in their no-data state; only the browser mock generators
       are demoable. Plumb an `AppHandle` from `main.rs` into the Scout/Soldier/ledger paths
       and emit the `ecosystem`, `ledger`, and `strains` events `useTauriEvents` already
-      listens for.
-- [ ] **Evolution runs in the live wake path.** `spawn_demo` pre-seeds a hardcoded
+      listens for. Landed as `dashboard.rs`, threaded through as `Option<Arc<Dashboard>>`.
+- [x] **Evolution runs in the live wake path.** `spawn_demo` pre-seeds a hardcoded
       `Allele04 + Allele12` gene; `evolution/` (Stage-2 fuzz driver, Stage-3 Lymph Node) is
       never invoked outside tests. On `PharmacyOutcome::NoCureAvailable`, the Soldier should
       snapshot the frozen target → fuzz in-sandbox → allergy-check → `commit_gene` under
-      multisig → re-dispense.
-- [ ] **Happy-path demo before the kill-switch demo.** The seed commits then immediately
+      multisig → re-dispense. Landed as `agents::soldier::evolve_and_commit`.
+- [x] **Happy-path demo before the kill-switch demo.** The seed commits then immediately
       suppresses, so the only live outcome ever shown is `Suppressed`. Show a cure being
       dispensed and `Neutralized` first, *then* suppress and re-wake to show the halt.
-- [ ] **Confidence-threshold mobilization.** The on-chain `Confidence_Score` increments via
+      `spawn_demo` now runs two waves against the same `Threat_ID`: wave 1 evolves live and
+      shows `Neutralized`; only then does `suppress_gene` fire before wave 2 shows `Suppressed`.
+- [x] **Confidence-threshold mobilization.** The on-chain `Confidence_Score` increments via
       `submit_threat`, but nothing reads it back — the Scout wakes the local Soldier
       directly, so Phase 2's "network-wide mobilization on threshold cross" never fires in
-      the live path.
-- [ ] **Remove IPFS; store the gene bytes on-chain (over-engineering cut).** A gene is a
+      the live path. Both demo waves report the same `Threat_ID`, so wave 2's `submit_threat`
+      crosses `MOBILIZATION_THRESHOLD`; `spawn_demo`'s threat-report loop reads it back and
+      logs `threat.mobilized`. Doesn't gate the local Stage-1 wake — that stays separate,
+      per source-of-truth.md.
+- [x] **Remove IPFS; store the gene bytes on-chain (over-engineering cut).** A gene is a
       `Vec<Allele>` over a 3-variant enum — a handful of bytes, smaller than the 64-char CID
       that points at it. The off-chain blob store (Pinata/`PINATA_JWT`, `reqwest`,
-      `ledger/ipfs.rs`) is unjustified at this size. Replace `GenomeEntry.ipfs_cid: String`
-      with the gene's own bytes (`gene_seq: Vec<u8>`), drop the fetch-and-verify step (the
-      gene now comes straight from the trusted confirmed-commitment account read), and delete
-      `ipfs.rs` + the `reqwest`/Pinata dependency. Keep `gene_hash` as the registry's gene
-      identity (now derivable, but the documented `Wasm_Gene_Hash` field). Touches: the Anchor
-      program (`state.rs`, `commit_gene`), `ledger/{client,registry,mod}.rs`, `agents/soldier.rs`
-      (`resolve_and_run`, `Pharmacy`), `agents/scout.rs::spawn_demo`, then redeploy to devnet.
-- [ ] **One green pass of the ignored live tests** (`cargo test -- --ignored`): real process
-      suspension + the devnet `submit_threat`/`commit_gene`/`suppress_gene` round trip.
+      `ledger/ipfs.rs`) is unjustified at this size. Replaced `GenomeEntry.ipfs_cid: String`
+      with the gene's own bytes (`gene_seq: Vec<u8>`), dropped the fetch-and-verify step (the
+      gene now comes straight from the trusted confirmed-commitment account read), and deleted
+      `ipfs.rs` + the `reqwest`/Pinata dependency. Kept `gene_hash` as the registry's gene
+      identity. Redeployed to devnet under a fresh program ID (`5r6fERX6CtJ8RHzpf5wLtY1SfptV8rk4JEHfu6yh5WZV`
+      — the previously-recorded ID's upgrade authority wasn't available on this machine).
+- [x] **One green pass of the ignored live tests** (`cargo test -- --ignored`): the devnet
+      `submit_threat`/`commit_gene`/`suppress_gene` round trip is green against the freshly
+      deployed program. Caught and fixed a pre-existing Phase-11 bug running this for the
+      first time: `LYMPH_NODE_VALIDATORS` in `constants.rs` never actually matched the
+      `keys/lymph-nodes/validator-*.json` keypairs the Rust core signs with, so no real
+      multisig could ever clear `POI_QUORUM` — resynced the hardcoded pubkeys to the real
+      keys and redeployed.
+      The two real-process-suspension tests (`scripted_target_is_really_suspended`,
+      `wake_releases_real_target`) don't pass *in this sandbox*: spawned helper processes get
+      PIDs under 1000 here, tripping the `PID_FLOOR` guard in `scout::suspend`/
+      `soldier::release_target` that's deliberately there to protect real low-numbered
+      *system* PIDs (kernel/init) on a normal host — working as designed, just not
+      exercisable in a container with an unusually low PID counter. Not weakening that guard
+      to force a pass; these two need a normal dev machine to actually verify.
 
 Deliberately still simulated (in scope per the preamble — only the malware itself and the
 sandbox host stay fake): the scripted target as the "virus," the mock host inside

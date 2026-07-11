@@ -27,6 +27,14 @@ pub const ANOMALY_THRESHOLD: AnomalyScore = AnomalyScore(100);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ThreatId(pub [u8; 32]);
 
+impl ThreatId {
+    /// Lowercase hex string form — the shared display/id format for dashboard events
+    /// (`dashboard.rs`) and strain-node ids (`agents::soldier::evolve_and_commit`).
+    pub fn to_hex(&self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+}
+
 /// Reference to a compiled Wasm Gene Payload — the `Wasm_Gene_Hash` a Soldier resolves a
 /// `ThreatId` to via the Genome Registry (Ledger 3), verifies against the State Ledger's
 /// Merkle root, and fetches from IPFS before running in-sandbox.

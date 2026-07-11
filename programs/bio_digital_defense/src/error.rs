@@ -6,4 +6,6 @@ pub enum ErrorCode {
     InsufficientQuorum,
     #[msg("Gene is suppressed (Epigenetic_Status = 1); commit_gene cannot reactivate it")]
     GeneSuppressed,
+    #[msg("gene_seq exceeds GENE_SEQ_MAX_LEN")]
+    GeneSequenceTooLong,
 }

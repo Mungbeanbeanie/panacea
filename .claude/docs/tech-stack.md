@@ -20,9 +20,10 @@ inferring it (Working Agreement, Rule 4).
   `commit_gene`/`suppress_gene` ("Proof of Immunity" — see
   [Source of Truth](source-of-truth.md)); they sign only, so they need no faucet funding of
   their own.
-- **Gene storage:** real IPFS via Pinata's pinning API (`ledger/ipfs.rs`, `reqwest`
-  blocking client) — content-addressed, hash-verified against the on-chain `Wasm_Gene_Hash`
-  before a Soldier runs it.
+- **Gene storage:** the compiled allele sequence lives directly in the Genome Registry
+  account (`gene_seq: Vec<u8>`, `programs/bio_digital_defense/src/state.rs`) — no off-chain
+  blob store; a gene is a few bytes, smaller than a content address would be. Hash-verified
+  against the account's own `Wasm_Gene_Hash` before a Soldier runs it.
 - **What's still simulated:** the malware/virus itself (synthetic fixtures only — see
   [Security & Safety](security.md)) and the MicroVM/Wasm sandbox host. The chain,
-  consensus finality, on-chain program, and gene storage are real.
+  consensus finality, and on-chain program are real.

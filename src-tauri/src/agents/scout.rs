@@ -5,13 +5,17 @@
 
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
+use tauri::AppHandle;
+
 use super::{ThreatReport, WakeSignal};
 use crate::core::{Action, AnomalyScore, BehavioralSchema, Pid, ThreatId, ANOMALY_THRESHOLD};
+use crate::dashboard::Dashboard;
 
 /// How long the Scout daemon sleeps between observation ticks.
 ///
@@ -76,16 +80,25 @@ pub struct Scout<S: BehaviorSource> {
     wake_tx: Sender<WakeSignal>,
     /// Step 7 — submit the flagged vector to the Threat Registry (Phase 2 consumes this).
     threat_tx: Sender<ThreatReport>,
+    /// Mirrors each observed PID's trajectory to `EcosystemGraph.jsx`. `None` in tests, which
+    /// have no running Tauri app to emit into.
+    dashboard: Option<Arc<Dashboard>>,
 }
 
 impl<S: BehaviorSource + 'static> Scout<S> {
     /// Build a Scout over `source`, emitting wake signals and threat reports on the channels.
-    pub fn new(source: S, wake_tx: Sender<WakeSignal>, threat_tx: Sender<ThreatReport>) -> Self {
+    pub fn new(
+        source: S,
+        wake_tx: Sender<WakeSignal>,
+        threat_tx: Sender<ThreatReport>,
+        dashboard: Option<Arc<Dashboard>>,
+    ) -> Self {
         Self {
             source,
             scores: HashMap::new(),
             wake_tx,
             threat_tx,
+            dashboard,
         }
     }
 
@@ -109,6 +122,10 @@ impl<S: BehaviorSource + 'static> Scout<S> {
             }
             trajectory.score = AnomalyScore(trajectory.score.0 + weight(action).0);
             trajectory.actions.push(action);
+
+            if let Some(dashboard) = &self.dashboard {
+                dashboard.report_score(pid, &process_name(pid), trajectory.score.0);
+            }
 
             if trajectory.score >= ANOMALY_THRESHOLD {
                 trajectory.fired = true;
@@ -159,6 +176,25 @@ fn suspend(pid: Pid) {
 /// out of scope.
 #[cfg(not(unix))]
 fn suspend(_pid: Pid) {}
+
+/// A display name for the dashboard's ecosystem view — purely cosmetic, never fed back into
+/// scoring/correlation logic. Unix: the process's `comm` via `ps`; falls back to a synthetic
+/// name if that fails or on non-Unix.
+#[cfg(unix)]
+fn process_name(pid: Pid) -> String {
+    std::process::Command::new("ps")
+        .args(["-o", "comm=", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("pid-{pid}"))
+}
+
+#[cfg(not(unix))]
+fn process_name(pid: Pid) -> String {
+    format!("pid-{pid}")
+}
 
 /// The scripted trajectory the PoC target performs — A → B → C, summing 20 + 50 + 40 = 110,
 /// crossing the 100-pt threshold on the third action. Shared so the demo pharmacy can publish
@@ -218,27 +254,32 @@ fn behavioral_schema_hash(schema: &BehavioralSchema) -> [u8; 32] {
 }
 
 /// Live demo entry point: wires a scripted target against the **real** Solana devnet
-/// program and Pinata IPFS (Phase 11 — "no mocks left in the ledger path"). Seeds the
-/// scripted trajectory's cure via a real `commit_gene` + `suppress_gene` pair before the
-/// Scout starts, so the live wake demonstrates the kill-switch halting the cure before any
-/// fetch/exec — now as genuine devnet transactions instead of local mocks. Requires
-/// `PINATA_JWT` to be set; without it the IPFS upload fails loudly and the demo seed is
-/// skipped (the Scout/Soldier lifecycle still runs, just with nothing to dispense).
-pub fn spawn_demo() -> JoinHandle<()> {
-    use std::sync::Arc;
-
+/// program (Phase 12 — closes the live-path gaps Phase 11 left: real events, live
+/// evolution, happy-path-before-kill-switch, and mobilization). Runs the scripted
+/// trajectory twice against the same `Threat_ID`:
+///
+/// 1. Wave 1: no cure is published yet, so the Soldier evolves one live (fuzz → allergy
+///    check → `commit_gene`) and dispenses it — `Neutralized`, shown before any suppression.
+/// 2. Once wave 1 completes, `suppress_gene` flips the kill-switch, and wave 2 (a fresh
+///    scripted target, same trajectory) shows the halt — `Suppressed`.
+///
+/// Both waves' `submit_threat` calls hit the same `Threat_ID`, so `Confidence_Score` also
+/// crosses `MOBILIZATION_THRESHOLD` on wave 2 — the network-wide mobilization event fires
+/// alongside the kill-switch demonstration.
+pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
     use anchor_client::Cluster;
     use solana_keypair::read_keypair_file;
 
-    use super::soldier::Pharmacy;
-    use crate::evolution::alleles::{Allele, GenePayload};
-    use crate::ledger::client::SolanaConjugationLink;
-    use crate::ledger::ipfs::IpfsClient;
-    use crate::ledger::registry::GenomeRegistry;
+    use super::soldier::{Pharmacy, PharmacyOutcome};
+    use crate::ledger::client::{SolanaConjugationLink, SolanaGeneCommitter};
+    use crate::ledger::registry::{GenomeRegistry, ThreatRegistry};
     use crate::ledger::state::SolanaLightClient;
+
+    let dashboard = Arc::new(Dashboard::new(app));
 
     let (wake_tx, wake_rx) = channel::<WakeSignal>();
     let (threat_tx, threat_rx) = channel::<ThreatReport>();
+    let (outcome_tx, outcome_rx) = channel::<PharmacyOutcome>();
 
     let home = std::env::var("HOME").expect("HOME not set");
     let deployer = Arc::new(
@@ -253,65 +294,97 @@ pub fn spawn_demo() -> JoinHandle<()> {
         })
         .collect();
 
-    let conjugation = SolanaConjugationLink::new(Cluster::Devnet, deployer.clone())
+    let conjugation_for_threats = SolanaConjugationLink::new(Cluster::Devnet, deployer.clone())
         .expect("connect SolanaConjugationLink to devnet");
+    let threat_registry = ThreatRegistry::new(
+        SolanaLightClient::new(Cluster::Devnet, deployer.clone())
+            .expect("connect SolanaLightClient to devnet"),
+    );
+
+    let genome_link = SolanaConjugationLink::new(Cluster::Devnet, deployer.clone())
+        .expect("connect SolanaConjugationLink to devnet");
+    let committer = Arc::new(SolanaGeneCommitter::new(genome_link, validators));
     let light_client = SolanaLightClient::new(Cluster::Devnet, deployer.clone())
         .expect("connect SolanaLightClient to devnet");
-    let ipfs = IpfsClient::new();
-
-    // Demo seed: publish the cure for the scripted trajectory, then immediately suppress
-    // it — so the live wake demonstrates the kill-switch (Phase 9) via real transactions.
-    let threat_id = scripted_threat_id();
-    let gene = GenePayload {
-        sequence: vec![Allele::Allele04, Allele::Allele12],
-    };
-    match ipfs.upload(&gene) {
-        Ok(cid) => {
-            match conjugation.commit_gene(threat_id, gene.gene_hash(), cid, &validators) {
-                Ok(sig) => {
-                    println!("[ledger3] commit_gene {sig}");
-                    match conjugation.suppress_gene(threat_id, &validators) {
-                        Ok(sig) => println!("[ledger3] suppress_gene {sig}"),
-                        Err(e) => eprintln!("[ledger3] suppress_gene failed: {e}"),
-                    }
-                }
-                Err(e) => eprintln!("[ledger3] commit_gene failed: {e}"),
-            }
-        }
-        Err(e) => eprintln!("[ledger3] IPFS upload failed (is PINATA_JWT set?): {e}"),
-    }
-
     let pharmacy = Pharmacy {
         genome: Box::new(GenomeRegistry::new(light_client)),
-        ipfs: Box::new(ipfs),
+        committer: Box::new(committer.clone()),
     };
 
     // Real Soldier consumes the wake channel against the pharmacy: Phase-3 spore lifecycle +
-    // Phase-6/11 pharmacy resolution against live devnet + Phase-9 kill-switch.
+    // Phase-6/11/12 pharmacy resolution (evolving a cure live when none exists yet) +
+    // Phase-9 kill-switch. `outcome_tx` is this function's own sequencing signal — see (2).
     let spore_path = std::env::temp_dir().join("bio-digital-defense.spore");
-    super::soldier::run(wake_rx, spore_path, pharmacy);
+    super::soldier::run(
+        wake_rx,
+        spore_path,
+        pharmacy,
+        Some(dashboard.clone()),
+        Some(outcome_tx),
+    );
 
-    // Threat Registry (Ledger 2): each report is now a real `submit_threat` transaction.
+    // Threat Registry (Ledger 2): each report is a real `submit_threat` transaction. Reads
+    // Confidence_Score back and logs the network-wide mobilization event once it crosses
+    // MOBILIZATION_THRESHOLD — both demo waves report the same Threat_ID, so wave 2's
+    // submission is what actually crosses it. This doesn't gate the Soldier's wake, which
+    // stays Stage 1's own immediate, local mechanism (source-of-truth.md keeps the two
+    // separate).
+    let threat_dashboard = dashboard.clone();
     thread::spawn(move || {
         for report in threat_rx {
             let schema_hash = behavioral_schema_hash(&report.schema);
-            match conjugation.submit_threat(report.threat_id, schema_hash) {
-                Ok(sig) => println!(
-                    "[ledger2] submit_threat {sig} ({} actions)",
-                    report.schema.actions.len()
-                ),
+            match conjugation_for_threats.submit_threat(report.threat_id, schema_hash) {
+                Ok(sig) => {
+                    println!(
+                        "[ledger2] submit_threat {sig} ({} actions)",
+                        report.schema.actions.len()
+                    );
+                    threat_dashboard.log_event("threat.detected", report.threat_id.to_hex());
+                    if let Ok(Some(entry)) = threat_registry.get(&report.threat_id) {
+                        if entry.confidence_score >= bio_digital_defense::MOBILIZATION_THRESHOLD {
+                            println!(
+                                "[ledger2] network-wide mobilization triggered for {:?} \
+                                 (confidence {})",
+                                report.threat_id, entry.confidence_score
+                            );
+                            threat_dashboard
+                                .log_event("threat.mobilized", report.threat_id.to_hex());
+                        }
+                    }
+                }
                 Err(e) => eprintln!("[ledger2] submit_threat failed: {e}"),
             }
         }
     });
 
+    // Wave 1.
     let (source, child) =
         ScriptedSource::spawn_target().expect("failed to spawn scripted target process");
     // Drop the helper handle: the Scout suspends it on threshold cross and the Soldier
     // releases and terminates it during apoptosis; any residue is reaped on app exit.
     drop(child);
+    Scout::new(source, wake_tx.clone(), threat_tx.clone(), Some(dashboard.clone())).spawn();
 
-    Scout::new(source, wake_tx, threat_tx).spawn()
+    match outcome_rx.recv() {
+        Ok(outcome) => println!("[demo] wave 1 outcome: {outcome:?}"),
+        Err(_) => eprintln!("[demo] soldier channel closed before wave 1 completed"),
+    }
+
+    // Kill-switch, then wave 2 against a fresh target running the identical trajectory
+    // (same Threat_ID) to show the halt.
+    let threat_id = scripted_threat_id();
+    match committer.suppress(threat_id) {
+        Ok(sig) => {
+            println!("[ledger3] suppress_gene {sig}");
+            dashboard.log_event("gene.suppressed", threat_id.to_hex());
+        }
+        Err(e) => eprintln!("[ledger3] suppress_gene failed: {e}"),
+    }
+
+    let (source2, child2) = ScriptedSource::spawn_target()
+        .expect("failed to spawn scripted target process (wave 2)");
+    drop(child2);
+    Scout::new(source2, wake_tx, threat_tx, Some(dashboard)).spawn()
 }
 
 #[cfg(test)]
@@ -346,7 +419,7 @@ mod tests {
                 action: Action::HighEntropyFileLoop,
             }, // 110 -> fire
         ];
-        let mut scout = Scout::new(VecSource(observations), wake_tx, threat_tx);
+        let mut scout = Scout::new(VecSource(observations), wake_tx, threat_tx, None);
         scout.tick();
 
         let wake = wake_rx.try_recv().expect("expected a wake signal");
@@ -373,7 +446,7 @@ mod tests {
         let pid = child.id();
         let (wake_tx, wake_rx) = channel();
         let (threat_tx, _threat_rx) = channel();
-        let mut scout = Scout::new(source, wake_tx, threat_tx);
+        let mut scout = Scout::new(source, wake_tx, threat_tx, None);
 
         // One scripted action per tick: A (20) → B (70) → C (110, fires).
         scout.tick();

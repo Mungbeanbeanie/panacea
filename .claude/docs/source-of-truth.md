@@ -135,16 +135,17 @@ consumers, not validators).
 ### Ledger 3 — The Genome Registry (Soldier Instructions)
 
 - **Role:** the global pharmacy containing the cryptographic cures.
-- **Data:** an Anchor program account (PDA) mapping `Threat_ID → Wasm_Gene_Hash`;
-  `IPFS_CID` (the real, content-addressed location on a public IPFS pinning service where
-  the compiled, sandboxed Wasm exploit binary actually sits); `Epigenetic_Status` (a binary
-  flag: 0 = active expression, 1 = suppressed).
+- **Data:** an Anchor program account (PDA) mapping `Threat_ID → Wasm_Gene_Hash`; `gene_seq`
+  (the compiled allele sequence itself, stored directly in the account — a handful of bytes,
+  smaller than an off-chain content address would be, so there's no separate blob store to
+  trust or fetch from); `Epigenetic_Status` (a binary flag: 0 = active expression,
+  1 = suppressed).
 - **Mechanism:** Soldier agents never scan this registry passively. When a local Scout
   alerts a Soldier to a specific `Threat_ID` matching Ledger 2, the Soldier queries Ledger 3
   for that specific PDA via RPC. Reading a finalized account already carries Solana's
-  integrity guarantee, so there's no separate proof step — the Soldier fetches the
-  featherweight bytecode from IPFS by `IPFS_CID`, checks its hash against `Wasm_Gene_Hash`,
-  runs it to kill the virus, and then undergoes apoptosis.
+  integrity guarantee, so there's no separate proof step — the Soldier decodes the account's
+  own `gene_seq` bytes, checks their hash against `Wasm_Gene_Hash`, runs it to kill the
+  virus, and then undergoes apoptosis.
 
 ## Safeguard — Epigenetic Suppression Tokens
 

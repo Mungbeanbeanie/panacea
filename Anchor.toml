@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-bio_digital_defense = "FPn8ftGPZ5fr6rH3qtttBp2ppx7HNV4zscGhkFSv8t5x"
+bio_digital_defense = "5r6fERX6CtJ8RHzpf5wLtY1SfptV8rk4JEHfu6yh5WZV"
 
 [provider]
 cluster = "devnet"

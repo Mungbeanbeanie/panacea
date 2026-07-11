@@ -11,8 +11,9 @@ use bio_digital_defense::{accounts, instruction};
 use solana_keypair::Keypair;
 use solana_signature::Signature;
 
-use crate::core::{GeneHandle, ThreatId};
-use crate::ledger::ipfs::Cid;
+use crate::core::ThreatId;
+use crate::evolution::alleles::GenePayload;
+use crate::ledger::registry::GeneCommitter;
 use crate::ledger::state::{genome_pda, threat_pda};
 use crate::ledger::LedgerError;
 
@@ -58,12 +59,12 @@ impl SolanaConjugationLink {
     /// Genome Registry (Ledger 3): publish a cure, gated by the 3-of-5 Lymph Node multisig
     /// (Proof of Immunity) — mirrors `consensus::commit_gene()` + `GenomeRegistry::publish()`
     /// combined. `validators` holds the Lymph Node keypair files (Q4: one process co-signs
-    /// on behalf of all 5).
+    /// on behalf of all 5). Stores `gene`'s bytes directly in the account (no IPFS/CID
+    /// indirection — see `../../.claude/docs/source-of-truth.md`, Ledger 3).
     pub fn commit_gene(
         &self,
         threat_id: ThreatId,
-        gene_hash: GeneHandle,
-        ipfs_cid: Cid,
+        gene: &GenePayload,
         validators: &[Keypair],
     ) -> Result<Signature, LedgerError> {
         let genome_entry = genome_pda(&threat_id);
@@ -82,8 +83,8 @@ impl SolanaConjugationLink {
             })
             .args(instruction::CommitGene {
                 threat_id: threat_id.0,
-                gene_hash: gene_hash.0,
-                ipfs_cid: ipfs_cid.0,
+                gene_hash: gene.gene_hash().0,
+                gene_seq: gene.to_bytes(),
             });
         for validator in validators {
             request = request.signer(validator);
@@ -123,6 +124,35 @@ impl SolanaConjugationLink {
     }
 }
 
+/// The `Pharmacy`'s write side for the Phase-12 evolve-and-commit flow
+/// (`agents::soldier::evolve_and_commit`): a `SolanaConjugationLink` plus the Lymph Node
+/// validator keypairs needed to co-sign `commit_gene`/`suppress_gene`. Held behind `Arc` so
+/// `spawn_demo` can hand a `GeneCommitter` trait object to the `Pharmacy` while keeping its
+/// own handle to call `suppress` directly once the happy-path wave is done.
+pub struct SolanaGeneCommitter {
+    link: SolanaConjugationLink,
+    validators: Vec<Keypair>,
+}
+
+impl SolanaGeneCommitter {
+    pub fn new(link: SolanaConjugationLink, validators: Vec<Keypair>) -> Self {
+        Self { link, validators }
+    }
+
+    /// The kill-switch: flips `Epigenetic_Status` to 1 for `threat_id`'s gene.
+    pub fn suppress(&self, threat_id: ThreatId) -> Result<Signature, LedgerError> {
+        self.link.suppress_gene(threat_id, &self.validators)
+    }
+}
+
+impl GeneCommitter for Arc<SolanaGeneCommitter> {
+    fn commit_gene(&self, threat_id: &ThreatId, gene: &GenePayload) -> Result<(), LedgerError> {
+        self.link
+            .commit_gene(*threat_id, gene, &self.validators)
+            .map(|_signature| ())
+    }
+}
+
 #[cfg(test)]
 mod live_devnet_tests {
     use solana_keypair::read_keypair_file;
@@ -151,9 +181,7 @@ mod live_devnet_tests {
 
     /// Exercises the real on-chain path end to end against Solana devnet: `submit_threat`,
     /// then a 3-of-5 multisig `commit_gene` + `suppress_gene`, reading each result back via
-    /// `SolanaLightClient`/`ThreatRegistry`/`GenomeRegistry` — everything Phase 11 boxes 6-9
-    /// cover *except* real IPFS (box 10 needs a Pinata key this test doesn't have, so it
-    /// uses a placeholder CID instead of a real upload). Costs real devnet SOL (tiny) and
+    /// `SolanaLightClient`/`ThreatRegistry`/`GenomeRegistry`. Costs real devnet SOL (tiny) and
     /// takes several seconds for transaction confirmation, so it's `#[ignore]`d like the
     /// existing real-process tests — run locally with `cargo test -- --ignored`.
     #[test]
@@ -182,14 +210,14 @@ mod live_devnet_tests {
             .expect("threat entry exists after submit_threat");
         assert_eq!(threat_entry.confidence_score, 1);
 
-        let gene_hash = [0xBB; 32];
+        let gene = crate::evolution::alleles::GenePayload {
+            sequence: vec![
+                crate::evolution::alleles::Allele::Allele04,
+                crate::evolution::alleles::Allele::Allele12,
+            ],
+        };
         conjugation
-            .commit_gene(
-                threat_id,
-                GeneHandle(gene_hash),
-                Cid("placeholder-cid-no-pinata-key-yet".into()),
-                &validators,
-            )
+            .commit_gene(threat_id, &gene, &validators)
             .expect("commit_gene");
 
         let genome_registry =
@@ -199,6 +227,8 @@ mod live_devnet_tests {
             .expect("read genome entry")
             .expect("genome entry exists after commit_gene");
         assert_eq!(genome_entry.epigenetic_status, 0, "starts Active");
+        assert_eq!(genome_entry.gene_hash, gene.gene_hash().0);
+        assert_eq!(genome_entry.gene_seq, gene.to_bytes());
 
         conjugation
             .suppress_gene(threat_id, &validators)

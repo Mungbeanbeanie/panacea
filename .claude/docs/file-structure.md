@@ -21,6 +21,8 @@ bio-digital-defense/
 │   ├── tauri.conf.json          # Tauri config: windows, capabilities/permissions
 │   └── src/
 │       ├── main.rs              # Entry point; registers Tauri commands + event channels
+│       ├── dashboard.rs         # Bridges core events to the ecosystem/ledger/strains
+│                                 # Tauri event streams the dashboard listens on         [C]
 │       ├── core/mod.rs          # Shared config, constants, cross-cutting types      [A]
 │       ├── agents/                                                                    [A]
 │       │   ├── mod.rs           # Agent traits + shared lifecycle types
@@ -35,10 +37,9 @@ bio-digital-defense/
 │           ├── client.rs        # Solana RPC transaction submission ("conjugation"),
 │                                 # via anchor-client (submit_threat/commit_gene/suppress_gene)
 │           ├── state.rs         # Commitment-level account reads (light-client wrapper)
-│           ├── registry.rs      # GenomeSource trait + read-through cache mirroring the
-│                                 # on-chain Threat + Genome PDAs (real + offline-fake impls)
-│           └── ipfs.rs          # GeneStore trait + real Pinata client (real + offline-fake
-│                                 # impls) — gene binary upload/fetch
+│           └── registry.rs      # GenomeSource + GeneCommitter traits + read-through cache
+│                                 # mirroring the on-chain Threat + Genome PDAs (gene bytes
+│                                 # live in the account — real + offline-fake impls)
 │
 └── landing/                     # React + Vite dashboard (read-only)         [owner C]
     ├── CLAUDE.md                # Frontend-specific guidance (scoped)

@@ -40,8 +40,13 @@ pub fn handle_commit_gene(
     ctx: Context<CommitGene>,
     threat_id: [u8; 32],
     gene_hash: [u8; 32],
-    ipfs_cid: String,
+    gene_seq: Vec<u8>,
 ) -> Result<()> {
+    require!(
+        gene_seq.len() <= GENE_SEQ_MAX_LEN,
+        ErrorCode::GeneSequenceTooLong
+    );
+
     let candidates = [
         ctx.accounts.validator_1.as_ref(),
         ctx.accounts.validator_2.as_ref(),
@@ -74,7 +79,7 @@ pub fn handle_commit_gene(
 
     entry.threat_id = threat_id;
     entry.gene_hash = gene_hash;
-    entry.ipfs_cid = ipfs_cid;
+    entry.gene_seq = gene_seq;
     entry.epigenetic_status = 0;
     entry.bump = ctx.bumps.genome_entry;
 
