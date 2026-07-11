@@ -205,3 +205,43 @@ left in place with real Solana devnet integration.
 **Done when:** a real devnet transaction commits a gene to the Genome Registry PDA under
 multisig, a Soldier fetches and verifies it via RPC + real IPFS CID, and a `suppress_gene`
 transaction halts it within seconds — no mocks left in the ledger path.
+
+## Phase 12 — Live-Path Integration (closing the gaps)
+**Owner:** all · **Depends on:** everything above · runs after Phases 0–11 land
+
+Audit (2026-07-11): every box above is checked, but several phases landed as standalone
+modules proven only by their own tests — the *live* demo path (`agents/scout.rs::spawn_demo`)
+skips them, and the dashboard never receives a real event. These are the remaining gaps
+between "each phase works in isolation" and "the program is fully implemented."
+
+- [ ] **Dashboard gets real events.** No `emit` exists anywhere in `src-tauri/` — inside the
+      Tauri app all three views sit in their no-data state; only the browser mock generators
+      are demoable. Plumb an `AppHandle` from `main.rs` into the Scout/Soldier/ledger paths
+      and emit the `ecosystem`, `ledger`, and `strains` events `useTauriEvents` already
+      listens for.
+- [ ] **Evolution runs in the live wake path.** `spawn_demo` pre-seeds a hardcoded
+      `Allele04 + Allele12` gene; `evolution/` (Stage-2 fuzz driver, Stage-3 Lymph Node) is
+      never invoked outside tests. On `PharmacyOutcome::NoCureAvailable`, the Soldier should
+      snapshot the frozen target → fuzz in-sandbox → allergy-check → `commit_gene` under
+      multisig → re-dispense.
+- [ ] **Happy-path demo before the kill-switch demo.** The seed commits then immediately
+      suppresses, so the only live outcome ever shown is `Suppressed`. Show a cure being
+      dispensed and `Neutralized` first, *then* suppress and re-wake to show the halt.
+- [ ] **Confidence-threshold mobilization.** The on-chain `Confidence_Score` increments via
+      `submit_threat`, but nothing reads it back — the Scout wakes the local Soldier
+      directly, so Phase 2's "network-wide mobilization on threshold cross" never fires in
+      the live path.
+- [ ] **Real IPFS end-to-end.** Provision a `PINATA_JWT` and run the round trip with a real
+      upload/fetch — `spawn_demo`'s upload currently fails loudly without it, and the devnet
+      test uses a placeholder CID (`ledger/client.rs`).
+- [ ] **One green pass of the ignored live tests** (`cargo test -- --ignored`): real process
+      suspension + the devnet `submit_threat`/`commit_gene`/`suppress_gene` round trip.
+
+Deliberately still simulated (in scope per the preamble — only the malware itself and the
+sandbox host stay fake): the scripted target as the "virus," the mock host inside
+`evolution/sandbox.rs`, and the Lymph Node's mock Top-5,000 subset. Windows suspension
+(`NtSuspendProcess`) stays a stub — the PoC targets macOS/Linux.
+
+**Done when:** launching the app with `PINATA_JWT` set shows, live in the dashboard: the
+scripted target crossing 100 pts → Soldier wake → fuzz-discovered gene committed on devnet →
+`Neutralized`, then a `suppress_gene` transaction halting the next wake — no manual seeding.
