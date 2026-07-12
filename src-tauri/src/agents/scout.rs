@@ -456,8 +456,12 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
     // more simultaneous catches to watch land in the dashboard. Repeat copies share their
     // specimen type's deterministic Threat_ID (the schema hash doesn't depend on PID), so
     // copies past the first one demonstrate Ledger 2's confidence-matching/mobilization path
-    // rather than minting new threats.
-    const WAVE1_COPIES: usize = 2;
+    // rather than minting new threats. Capped at 3 (6 targets): `RealBehaviorSource::poll()`
+    // shells out to `lsof` once per target, sequentially, and `lsof` alone costs ~40-50ms —
+    // pushing much past this risks a poll() taking long enough, relative to `TICK_INTERVAL`,
+    // to matter (both specimens loop forever though, so an occasional missed tick isn't fatal,
+    // just a slower catch).
+    const WAVE1_COPIES: usize = 3;
     let fake_viruses_dir = format!("{manifest_dir}/../fake_viruses");
     let mut targets = Vec::with_capacity(WAVE1_COPIES * 2);
     for _ in 0..WAVE1_COPIES {

@@ -103,7 +103,7 @@ export default function Dashboard({ auth, navigate }) {
     };
   });
 
-  const events = (ledger ?? []).slice(0, 5).map((ev) => {
+  const events = (ledger ?? []).map((ev) => {
     const copy = LEDGER_EVENT_COPY[ev.kind] ?? { color: colors.textFaint, text: (id) => `${ev.kind} — ${id}` };
     return { key: ev.id, time: ev.at, color: copy.color, text: copy.text(ev.threatId) };
   });
@@ -202,7 +202,6 @@ export default function Dashboard({ auth, navigate }) {
           <div style={{ ...card, padding: 28, display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={cardTitle}>Recent activity</div>
-              <a href="#log" style={{ fontSize: 13 }}>Full log</a>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: colors.block, border: `1px solid ${colors.borderPanel}`, borderRadius: 10, padding: "14px 18px", gap: 16 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -217,13 +216,15 @@ export default function Dashboard({ auth, navigate }) {
             {events.length === 0 ? (
               <p style={{ fontSize: 13, color: colors.textFaint, margin: 0 }}>Waiting for ledger events…</p>
             ) : (
-              events.map((ev) => (
-                <div key={ev.key} style={{ display: "flex", alignItems: "baseline", gap: 14, padding: "13px 0", borderBottom: `1px solid ${colors.border}` }}>
-                  <span style={{ fontFamily: fontDisplay, fontSize: 12, color: colors.textFaint, minWidth: 58, fontVariantNumeric: "tabular-nums" }}>{ev.time}</span>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: ev.color, display: "inline-block", flexShrink: 0, position: "relative", top: -1 }} />
-                  <span style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 1.5 }}>{ev.text}</span>
-                </div>
-              ))
+              <div style={{ display: "flex", flexDirection: "column", maxHeight: 420, overflowY: "auto", paddingRight: 4 }}>
+                {events.map((ev) => (
+                  <div key={ev.key} style={{ display: "flex", alignItems: "baseline", gap: 14, padding: "13px 0", borderBottom: `1px solid ${colors.border}`, flexShrink: 0 }}>
+                    <span style={{ fontFamily: fontDisplay, fontSize: 12, color: colors.textFaint, minWidth: 58, fontVariantNumeric: "tabular-nums" }}>{ev.time}</span>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: ev.color, display: "inline-block", flexShrink: 0, position: "relative", top: -1 }} />
+                    <span style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 1.5 }}>{ev.text}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </section>
@@ -288,7 +289,6 @@ export default function Dashboard({ auth, navigate }) {
           <div style={{ ...card, padding: 28, display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={cardTitle}>Immune ledger</div>
-              <a href="#ledger" style={{ fontSize: 13 }}>All blocks</a>
             </div>
             {blocks.length === 0 ? (
               <p style={{ fontSize: 13, color: colors.textFaint, margin: 0 }}>Waiting for ledger events…</p>

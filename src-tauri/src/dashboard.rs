@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use sysinfo::{Disks, System};
+use sysinfo::{get_current_pid, Disks, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter};
 
 use crate::core::Pid;
@@ -134,6 +134,19 @@ impl Dashboard {
         let _ = self.app.emit("ecosystem", nodes);
     }
 
+    /// Drops a PID from `EcosystemGraph.jsx`'s "Running programs" view once its Soldier
+    /// dispatch has resolved. `agents::soldier::release_target` unconditionally SIGKILLs the
+    /// target after every outcome (Neutralized, Suppressed, Ineffective, ...), so a PID
+    /// frozen at `report_score`'s last "suspended" write is stale forever without this — the
+    /// process is actually gone, not still suspended.
+    pub fn clear_ecosystem_node(&self, pid: Pid) {
+        let mut state = self.state.lock().unwrap();
+        if state.ecosystem.remove(&pid).is_some() {
+            let nodes: Vec<_> = state.ecosystem.values().cloned().collect();
+            let _ = self.app.emit("ecosystem", nodes);
+        }
+    }
+
     /// Appends one Proof-of-Immunity pipeline event for `LedgerTerminal.jsx`.
     pub fn log_event(&self, kind: &'static str, threat_id_hex: String) {
         let mut state = self.state.lock().unwrap();
@@ -205,7 +218,15 @@ impl Dashboard {
                 let _ = dashboard.app.emit("strains", strains);
 
                 sys.refresh_cpu_usage();
-                sys.refresh_memory();
+                sys.refresh_processes(ProcessesToUpdate::All, true);
+                // This process's own RSS, not `used_memory()` (whole-machine RAM — reads as
+                // 30+ GB on any normal dev box and has nothing to do with what Panacea itself
+                // costs). Matches the dashboard card's "Scout daemon footprint" label.
+                let ram_mb = get_current_pid()
+                    .ok()
+                    .and_then(|pid| sys.process(pid))
+                    .map(|p| p.memory() / (1024 * 1024))
+                    .unwrap_or(0);
                 let disks = Disks::new_with_refreshed_list();
                 let (disk_used, disk_total) = disks.list().iter().fold(
                     (0u64, 0u64),
@@ -220,7 +241,7 @@ impl Dashboard {
                 let _ = dashboard.app.emit(
                     "stats",
                     Stats {
-                        ram_mb: sys.used_memory() / (1024 * 1024),
+                        ram_mb,
                         cpu_pct: sys.global_cpu_usage(),
                         disk_used_gb: disk_used as f64 / 1e9,
                         disk_total_gb: disk_total as f64 / 1e9,

@@ -145,6 +145,9 @@ pub fn handle_wake(
     let soldier = Soldier::wake(spore, signal);
     let outcome = soldier.dispense(&signal.threat_id, pharmacy, dashboard);
     release_target(soldier.pid); // demo cleanup: unfreeze/terminate the scripted helper
+    if let Some(dashboard) = dashboard {
+        dashboard.clear_ecosystem_node(soldier.pid);
+    }
     let spore = soldier.apoptosis(spore_path)?;
     Ok((spore, outcome))
 }

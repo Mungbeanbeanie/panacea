@@ -21,8 +21,8 @@ dev:
 
 down:
 	@echo "Stopping dev processes..."
-	-pkill -f 'src-tauri/target/debug/bio-digital-defense' 2>/dev/null
-	-pkill -f 'node_modules/.bin/tauri dev' 2>/dev/null
+	-pkill -f 'target/debug/bio-digital-defense' 2>/dev/null
+	-pkill -f 'tauri dev' 2>/dev/null
 	-lsof -ti:5173 | xargs kill 2>/dev/null
 	@echo "Done."
 
