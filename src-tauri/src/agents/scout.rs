@@ -106,6 +106,9 @@ impl<S: BehaviorSource + 'static> Scout<S> {
     ///
     /// The daemon runs for the life of the process, sleeping [`TICK_INTERVAL`] between ticks.
     pub fn spawn(mut self) -> JoinHandle<()> {
+        if let Some(dashboard) = &self.dashboard {
+            dashboard.note_scout_spawned();
+        }
         thread::spawn(move || loop {
             self.tick();
             thread::sleep(TICK_INTERVAL);
@@ -351,6 +354,7 @@ fn behavioral_schema_hash(schema: &BehavioralSchema) -> [u8; 32] {
 pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
     use anchor_client::Cluster;
     use solana_keypair::read_keypair_file;
+    use solana_rpc_client::rpc_client::RpcClient;
 
     use super::soldier::{Pharmacy, PharmacyOutcome};
     use crate::ledger::client::{SolanaConjugationLink, SolanaGeneCommitter};
@@ -358,6 +362,12 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
     use crate::ledger::state::SolanaLightClient;
 
     let dashboard = Arc::new(Dashboard::new(app));
+
+    // Own light RPC handle just for the `stats` stream's `slot` field — separate from the
+    // `SolanaLightClient`/`SolanaConjugationLink` handles below, which need a signing keypair
+    // this plain slot lookup doesn't.
+    let slot_rpc = RpcClient::new(Cluster::Devnet.url().to_string());
+    dashboard.spawn_reemit(move || slot_rpc.get_slot().ok());
 
     let (wake_tx, wake_rx) = channel::<WakeSignal>();
     let (threat_tx, threat_rx) = channel::<ThreatReport>();

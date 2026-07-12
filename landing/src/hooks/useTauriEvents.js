@@ -3,7 +3,9 @@
 // stream has gone quiet. The single data-access point for the live views; components
 // stay presentational.
 //
-// Real wiring: inside a Tauri webview, listens via @tauri-apps/api/event.
+// Real wiring: inside a Tauri webview, listens via @tauri-apps/api/event. Detected via
+// "__TAURI_INTERNALS__" in window — always injected by Tauri 2, unlike "__TAURI__" which
+// needs the (unset) withGlobalTauri config flag.
 // Outside Tauri (plain `vite dev` in a browser) or before a phase's Rust side emits real
 // events, falls back to a local mock generator per stream so the dashboard is demoable.
 // ponytail: swap/remove MOCK_GENERATORS entries as each phase wires its real `emit`.
@@ -72,7 +74,7 @@ export function useTauriEvents(stream) {
       dropTimer.current = setTimeout(() => setDropped(true), DROP_TIMEOUT_MS);
     };
 
-    const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
+    const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
     if (isTauri) {
       import("@tauri-apps/api/event").then(({ listen }) =>

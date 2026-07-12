@@ -282,31 +282,34 @@ user who logs in and navigates after the two waves sees "Waiting for…" forever
 `strains` stream has no mounted consumer. Goal: `make dev` → signed-in Dashboard shows real
 backend data, no mocks on the live path.
 
-- [ ] **Fix Tauri detection** (`landing/src/hooks/useTauriEvents.js`): check
+- [x] **Fix Tauri detection** (`landing/src/hooks/useTauriEvents.js`): check
       `"__TAURI_INTERNALS__" in window` (always injected by Tauri 2) instead of
       `"__TAURI__"`. Keep the mock fallback for plain browser `vite dev`.
-- [ ] **Snapshot re-emit loop** (`dashboard.rs` + `scout.rs`): `spawn_reemit(self: &Arc<Self>)`
+- [x] **Snapshot re-emit loop** (`dashboard.rs` + `scout.rs`): `spawn_reemit(self: &Arc<Self>)`
       re-emits current `ecosystem`/`ledger`/`strains` state every ~2s; called from
       `spawn_demo`. Fixes late subscribers and the post-demo dead air / false `dropped`.
-- [ ] **Real system stats — new `stats` stream**: add `sysinfo`; the re-emit thread also
+- [x] **Real system stats — new `stats` stream**: add `sysinfo`; the re-emit thread also
       emits `{ ramMb, cpuPct, diskUsedGb, diskTotalGb, uptimeSecs, scouts, monitored, slot }`.
       `scouts` = AtomicUsize on `Dashboard` bumped by `Scout::spawn`; `slot` = real devnet
       slot via an `RpcClient::get_slot` closure passed from `spawn_demo` (None on failure).
       `Dashboard.jsx` uses real values when present, keeps the random-walk as no-data
       fallback. Delete the GPU card (no cross-platform source — deletion over a fake number).
-- [ ] **Mount the `strains` stream**: add the existing `StrainTree.jsx` as a card in
+- [x] **Mount the `strains` stream**: add the existing `StrainTree.jsx` as a card in
       `pages/Dashboard.jsx` next to "Immune ledger". No double-mount of
       EcosystemGraph/LedgerTerminal — Dashboard already renders those streams its own way.
-- [ ] **Real Protection page** (`pages/Protection.jsx`): derive the kill log from
+- [x] **Real Protection page** (`pages/Protection.jsx`): derive the kill log from
       `threat.neutralized`, allergies from `gene.allergy_flagged`, suppressions from
       `gene.suppressed` via `useTauriEvents("ledger")`; summary tiles computed from the
       events; columns shrink to what's real (Threat ID, time, outcome — no invented scout
-      names/TTK). Delete the static `KILLS` placeholders; empty state per degrade-gracefully.
-- [ ] **Event copy for real kinds** (`pages/Dashboard.jsx`): extend `LEDGER_EVENT_COPY` /
-      `LEDGER_BLOCK_STATUS` with `threat.mobilized`, `gene.fuzzed`, `gene.allergy_flagged`,
-      `gene.suppressed`, `threat.neutralized`, `gene.ineffective`, `cure.unavailable`,
-      `ledger.unavailable`; drop the mock-era `gene.proposed`/`poi.verified` entries. Fix the
-      "Gene vector" line — IPFS was removed in Phase 12; show the threat hash instead.
+      names/TTK). Deleted the static `KILLS` placeholders; empty state per degrade-gracefully.
+- [x] **Event copy for real kinds** (`pages/Dashboard.jsx`): extended `LEDGER_EVENT_COPY` /
+      `LEDGER_BLOCK_STATUS` with all real Rust-emitted kinds (`threat.mobilized`,
+      `gene.fuzzed`, `gene.allergy_flagged`, `gene.suppressed`, `threat.neutralized`,
+      `threat.ineffective` — the actual emitted name, plan's `gene.ineffective` didn't match
+      any real `log_event`/`log_outcome` call site — `gene.hash_unverified`,
+      `cure.unavailable`, `ledger.unavailable`); dropped the mock-era `gene.proposed`/
+      `poi.verified` entries. Fixed the "Gene vector" line — IPFS was removed in Phase 12;
+      shows a truncated threat hash instead.
 
 Stays simulated, declared with `ponytail:` comments: active nodes, cures/min, soldier spore
 counts, battery — network-wide fiction a single endpoint can't know.

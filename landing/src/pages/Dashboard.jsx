@@ -1,10 +1,13 @@
 // Dashboard — signed-in home. System stat cards, agent/network status, recent activity
 // and the immune ledger (both live from the Rust `ledger` stream via useTauriEvents),
 // machine stats, and a running-programs table live from the `ecosystem` stream.
-// From Dashboard.dc.html. RAM/CPU/GPU/scouts/block/network stats have no backing Tauri
-// stream yet, so they stay as clamped random-walk mocks like the design prototype.
+// From Dashboard.dc.html. RAM/CPU/disk/uptime/scouts/slot are real, from the `stats`
+// stream — falls back to a clamped random-walk mock until the first `stats` event arrives.
+// Active nodes/cures-per-min/soldier spores/battery stay simulated (ponytail: no single
+// endpoint can know network-wide figures).
 import { useEffect, useState } from "react";
 import SignedInNav from "../components/SignedInNav.jsx";
+import StrainTree from "../components/StrainTree.jsx";
 import { useTauriEvents } from "../hooks/useTauriEvents.js";
 import { colors, fontDisplay } from "../tokens.js";
 
@@ -19,38 +22,58 @@ const STATUS_STYLE = {
 
 const LEDGER_EVENT_COPY = {
   "threat.detected": { color: colors.green, text: (id) => `Scout reported a new signature — ${id} flagged, confidence low. Monitoring.` },
-  "gene.proposed": { color: colors.lavender, text: (id) => `Soldier proposed a kill allele for ${id}. Awaiting validation.` },
-  "allergy.checked": { color: colors.yellow, text: (id) => `Allergy check ran for ${id} — suppressed per host policy.` },
-  "poi.verified": { color: colors.textFaint, text: (id) => `Proof of Immunity validated for ${id} — anchored to State Ledger.` },
-  "gene.committed": { color: colors.green, text: (id) => `Kill module for ${id} committed to Genome Registry — immunity published network-wide.` },
+  "threat.mobilized": { color: colors.lavender, text: (id) => `Confidence threshold crossed for ${id} — network-wide mobilization triggered.` },
+  "gene.fuzzed": { color: colors.lavender, text: (id) => `Sandbox fuzz found a kill allele combo for ${id}. Entering Lymph Node regression.` },
+  "allergy.checked": { color: colors.yellow, text: (id) => `Allergy check passed for ${id} — no whitelisted app broke.` },
+  "gene.allergy_flagged": { color: colors.yellow, text: (id) => `Candidate gene for ${id} broke a whitelisted app — allergy-flagged, dropped.` },
+  "gene.committed": { color: colors.green, text: (id) => `Kill module for ${id} committed to Genome Registry under multisig — immunity published network-wide.` },
+  "threat.neutralized": { color: colors.green, text: (id) => `Cure dispensed for ${id} — target neutralized in-sandbox, apoptosis complete.` },
+  "threat.ineffective": { color: colors.textFaint, text: (id) => `Dispensed cure for ${id} didn't neutralize the target.` },
+  "gene.hash_unverified": { color: colors.red, text: (id) => `Gene bytes for ${id} failed the on-chain hash check — refused to run.` },
+  "cure.unavailable": { color: colors.textFaint, text: (id) => `No cure could be evolved for ${id} yet.` },
+  "gene.suppressed": { color: colors.red, text: (id) => `Epigenetic kill-switch flipped for ${id} — cure halted before dispense.` },
+  "ledger.unavailable": { color: colors.red, text: (id) => `Genome Registry unreachable while resolving ${id}.` },
 };
+
+function formatUptime(totalSecs) {
+  const secs = Math.floor(totalSecs);
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return `${d}d ${h}h ${String(m).padStart(2, "0")}m`;
+}
 
 const LEDGER_BLOCK_STATUS = {
   "gene.committed": { label: "Active & verified", color: colors.greenLight },
-  "poi.verified": { label: "Active & verified", color: colors.greenLight },
-  "allergy.checked": { label: "Suppressed (allergy)", color: colors.yellow },
+  "threat.neutralized": { label: "Neutralized", color: colors.greenLight },
+  "gene.allergy_flagged": { label: "Suppressed (allergy)", color: colors.yellow },
+  "gene.suppressed": { label: "Suppressed (kill-switch)", color: colors.red },
+  "threat.ineffective": { label: "Ineffective", color: colors.textFaint },
+  "cure.unavailable": { label: "No cure yet", color: colors.textFaint },
+  "gene.hash_unverified": { label: "Hash mismatch", color: colors.red },
+  "ledger.unavailable": { label: "Ledger unavailable", color: colors.red },
 };
 
 export default function Dashboard({ auth, navigate }) {
   const [on, setOn] = useState(true);
   const [sys, setSys] = useState({
-    ram: 8.2, cpu: 22, gpu: 10, cpuTemp: 105, gpuTemp: 98,
+    ramMb: 8390, cpu: 22, cpuTemp: 105,
     scouts: 46, block: 8412907, activeNodes: 41902, curesPerMin: 1208,
+    diskUsedGb: 412, diskTotalGb: 1000, uptimeSecs: 3 * 86400 + 14 * 3600 + 120,
   });
 
   useEffect(() => {
     const id = setInterval(() => {
       if (!on) return;
       setSys((s) => ({
-        ram: Math.max(6, Math.min(11, s.ram + (Math.random() - 0.5) * 0.4)),
+        ...s,
+        ramMb: Math.max(6000, Math.min(11000, s.ramMb + Math.round((Math.random() - 0.5) * 400))),
         cpu: Math.max(4, Math.min(38, s.cpu + Math.round((Math.random() - 0.5) * 5))),
-        gpu: Math.max(2, Math.min(24, s.gpu + Math.round((Math.random() - 0.5) * 3))),
         cpuTemp: Math.max(95, Math.min(115, s.cpuTemp + Math.round((Math.random() - 0.5) * 2))),
-        gpuTemp: Math.max(88, Math.min(108, s.gpuTemp + Math.round((Math.random() - 0.5) * 2))),
-        scouts: s.scouts,
         block: s.block + (Math.random() < 0.4 ? 1 : 0),
         activeNodes: s.activeNodes + Math.floor((Math.random() - 0.45) * 8),
         curesPerMin: Math.max(900, Math.min(1500, s.curesPerMin + Math.floor((Math.random() - 0.5) * 30))),
+        uptimeSecs: s.uptimeSecs + 1.5,
       }));
     }, 1500);
     return () => clearInterval(id);
@@ -58,6 +81,14 @@ export default function Dashboard({ auth, navigate }) {
 
   const { data: ecosystem } = useTauriEvents("ecosystem");
   const { data: ledger } = useTauriEvents("ledger");
+  const { data: stats } = useTauriEvents("stats");
+
+  const ramMb = stats?.ramMb ?? sys.ramMb;
+  const cpuPct = stats?.cpuPct != null ? Math.round(stats.cpuPct) : sys.cpu;
+  const diskUsedGb = stats?.diskUsedGb ?? sys.diskUsedGb;
+  const diskTotalGb = stats?.diskTotalGb ?? sys.diskTotalGb;
+  const uptimeSecs = stats?.uptimeSecs ?? sys.uptimeSecs;
+  const slot = stats?.slot ?? null;
 
   const processes = (ecosystem ?? []).map((node) => {
     const status = STATUS_STYLE[node.status] ?? { label: node.status, color: colors.textFaint };
@@ -84,15 +115,17 @@ export default function Dashboard({ auth, navigate }) {
       num: (sys.block - i).toLocaleString(),
       ago: ev.at,
       trajectory: ev.kind,
-      vector: `ipfs://${ev.threatId.toLowerCase()}`,
+      threatHash: ev.threatId.length > 20 ? `${ev.threatId.slice(0, 18)}…` : ev.threatId,
       status: status.label,
       statusColor: status.color,
     };
   });
 
-  const scouts = on ? sys.scouts : 0;
-  const netDown = (2.4 + (sys.cpu - 22) * 0.05).toFixed(1);
-  const netUp = (0.6 + (sys.gpu - 10) * 0.02).toFixed(1);
+  const scouts = on ? (stats?.scouts ?? sys.scouts) : 0;
+  const netDown = (2.4 + (cpuPct - 22) * 0.05).toFixed(1);
+  const netUp = (0.6 + (cpuPct - 22) * 0.02).toFixed(1);
+  const diskPct = Math.round((diskUsedGb / diskTotalGb) * 100);
+  const uptimeLabel = formatUptime(uptimeSecs);
 
   return (
     <div className="pan-page" style={{ minHeight: "100vh", background: colors.bg, color: colors.text, display: "flex", flexDirection: "column" }}>
@@ -114,11 +147,10 @@ export default function Dashboard({ auth, navigate }) {
       {/* MAIN */}
       <main style={{ maxWidth: 1180, width: "100%", margin: "0 auto", padding: 48, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 40 }}>
         {/* SYSTEM STATS */}
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 24 }}>
           {[
-            [`${sys.ram.toFixed(1)} MB`, "RAM in use", "Scout daemon footprint"],
-            [`${sys.cpu}%`, "CPU in use", `${sys.cpuTemp}°F`],
-            [`${sys.gpu}%`, "GPU in use", `${sys.gpuTemp}°F`],
+            [`${ramMb.toLocaleString()} MB`, "RAM in use", "Scout daemon footprint"],
+            [`${cpuPct}%`, "CPU in use", `${sys.cpuTemp}°F`],
           ].map(([value, label, sub]) => (
             <div key={label} style={{ ...card, padding: 30, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}>
               <div style={{ fontFamily: fontDisplay, fontSize: 44, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
@@ -152,7 +184,9 @@ export default function Dashboard({ auth, navigate }) {
               <div style={cardTitle}>Network</div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 14, color: colors.textSecondary }}>Ledger sync</span>
-                <span style={{ fontSize: 13, color: colors.greenLight, fontWeight: 600 }}>Block {sys.block.toLocaleString()}</span>
+                <span style={{ fontSize: 13, color: colors.greenLight, fontWeight: 600 }}>
+                  {slot != null ? `Slot ${slot.toLocaleString()}` : `Block ${sys.block.toLocaleString()}`}
+                </span>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 14, color: colors.textSecondary }}>Threat Registry</span>
@@ -198,9 +232,9 @@ export default function Dashboard({ auth, navigate }) {
         <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24 }}>
           <div style={{ ...card, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ fontSize: 11, color: colors.textFaint, letterSpacing: 1, textTransform: "uppercase" }}>Disk</div>
-            <div style={{ fontFamily: fontDisplay, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>412 / 1000 GB</div>
+            <div style={{ fontFamily: fontDisplay, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{Math.round(diskUsedGb)} / {Math.round(diskTotalGb)} GB</div>
             <div style={{ height: 4, borderRadius: 2, background: colors.borderPanel, marginTop: 6, overflow: "hidden" }}>
-              <div style={{ width: "41%", height: "100%", background: colors.lavender }} />
+              <div style={{ width: `${diskPct}%`, height: "100%", background: colors.lavender }} />
             </div>
           </div>
           <div style={{ ...card, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -210,7 +244,7 @@ export default function Dashboard({ auth, navigate }) {
           </div>
           <div style={{ ...card, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ fontSize: 11, color: colors.textFaint, letterSpacing: 1, textTransform: "uppercase" }}>Uptime</div>
-            <div style={{ fontFamily: fontDisplay, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>3d 14h 02m</div>
+            <div style={{ fontFamily: fontDisplay, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{uptimeLabel}</div>
             <div style={{ fontSize: 12, color: colors.textFaint }}>Since last restart</div>
           </div>
           <div style={{ ...card, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -220,8 +254,8 @@ export default function Dashboard({ auth, navigate }) {
           </div>
         </section>
 
-        {/* PROCESS GRAPH + IMMUNE LEDGER */}
-        <section style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 24, alignItems: "start" }}>
+        {/* PROCESS GRAPH + IMMUNE LEDGER + STRAINS */}
+        <section style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 24, alignItems: "start" }}>
           <div style={{ ...card, padding: 28, display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={cardTitle}>Running programs</div>
@@ -270,8 +304,8 @@ export default function Dashboard({ auth, navigate }) {
                     <span style={{ fontFamily: fontDisplay, color: colors.textSecondary }}>{blk.trajectory}</span>
                   </div>
                   <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                    <span style={{ color: colors.textFaint, minWidth: 92 }}>Gene vector</span>
-                    <span style={{ fontFamily: fontDisplay, color: colors.lavender }}>{blk.vector}</span>
+                    <span style={{ color: colors.textFaint, minWidth: 92 }}>Threat hash</span>
+                    <span style={{ fontFamily: fontDisplay, color: colors.lavender }}>{blk.threatHash}</span>
                   </div>
                   <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
                     <span style={{ color: colors.textFaint, minWidth: 92 }}>Status</span>
@@ -280,6 +314,10 @@ export default function Dashboard({ auth, navigate }) {
                 </div>
               ))
             )}
+          </div>
+
+          <div style={{ ...card, padding: 28 }}>
+            <StrainTree />
           </div>
         </section>
       </main>
