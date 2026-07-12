@@ -12,7 +12,7 @@ use solana_keypair::Keypair;
 use solana_signature::Signature;
 
 use crate::core::ThreatId;
-use crate::evolution::alleles::GenePayload;
+use crate::evolution::alleles::CompiledGene;
 use crate::ledger::registry::GeneCommitter;
 use crate::ledger::state::{genome_pda, threat_pda};
 use crate::ledger::LedgerError;
@@ -59,12 +59,12 @@ impl SolanaConjugationLink {
     /// Genome Registry (Ledger 3): publish a cure, gated by the 3-of-5 Lymph Node multisig
     /// (Proof of Immunity) — mirrors `consensus::commit_gene()` + `GenomeRegistry::publish()`
     /// combined. `validators` holds the Lymph Node keypair files (Q4: one process co-signs
-    /// on behalf of all 5). Stores `gene`'s bytes directly in the account (no IPFS/CID
-    /// indirection — see `../../.claude/docs/source-of-truth.md`, Ledger 3).
+    /// on behalf of all 5). Stores `gene`'s compiled Wasm bytes directly in the account (no
+    /// IPFS/CID indirection — see `../../.claude/docs/source-of-truth.md`, Ledger 3).
     pub fn commit_gene(
         &self,
         threat_id: ThreatId,
-        gene: &GenePayload,
+        gene: &CompiledGene,
         validators: &[Keypair],
     ) -> Result<Signature, LedgerError> {
         let genome_entry = genome_pda(&threat_id);
@@ -146,7 +146,7 @@ impl SolanaGeneCommitter {
 }
 
 impl GeneCommitter for Arc<SolanaGeneCommitter> {
-    fn commit_gene(&self, threat_id: &ThreatId, gene: &GenePayload) -> Result<(), LedgerError> {
+    fn commit_gene(&self, threat_id: &ThreatId, gene: &CompiledGene) -> Result<(), LedgerError> {
         self.link
             .commit_gene(*threat_id, gene, &self.validators)
             .map(|_signature| ())
@@ -216,8 +216,9 @@ mod live_devnet_tests {
                 crate::evolution::alleles::Allele::Allele12,
             ],
         };
+        let compiled = gene.compile();
         conjugation
-            .commit_gene(threat_id, &gene, &validators)
+            .commit_gene(threat_id, &compiled, &validators)
             .expect("commit_gene");
 
         let genome_registry =
@@ -227,8 +228,8 @@ mod live_devnet_tests {
             .expect("read genome entry")
             .expect("genome entry exists after commit_gene");
         assert_eq!(genome_entry.epigenetic_status, 0, "starts Active");
-        assert_eq!(genome_entry.gene_hash, gene.gene_hash().0);
-        assert_eq!(genome_entry.gene_seq, gene.to_bytes());
+        assert_eq!(genome_entry.gene_hash, compiled.gene_hash().0);
+        assert_eq!(genome_entry.gene_seq, compiled.to_bytes());
 
         conjugation
             .suppress_gene(threat_id, &validators)

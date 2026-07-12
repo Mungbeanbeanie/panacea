@@ -16,10 +16,13 @@ pub const MOBILIZATION_THRESHOLD: u32 = 2;
 /// Minimum Lymph Node signatures for Proof of Immunity (source-of-truth.md: 3-of-5).
 pub const POI_QUORUM: u8 = 3;
 
-/// Longest allele sequence a `GenomeEntry.gene_seq` can hold — matches
-/// `Allele::CATALOG`'s size in the Rust core (`evolution/alleles.rs`), since a winning
-/// combo is a subset of the fixed allele catalog and never repeats an allele.
-pub const GENE_SEQ_MAX_LEN: usize = 3;
+/// Longest compiled Wasm gene binary a `GenomeEntry.gene_seq` can hold. The Rust core
+/// compiles each winning allele combo into a real `.wasm` binary (`evolution/alleles.rs`'s
+/// `GenePayload::compile`/`CompiledGene`) rather than storing a raw allele-index array;
+/// measured via `wat::parse_str` on the fixed WAT skeleton this codebase generates: ~104
+/// bytes. 256 gives comfortable headroom over that measurement without being an arbitrary
+/// round number picked with no basis.
+pub const GENE_SEQ_MAX_LEN: usize = 256;
 
 /// The 5 Lymph Node validators' persistent Solana pubkeys gating `commit_gene` — hardcoded
 /// rather than stored in a mutable account, matching how every other threshold in this

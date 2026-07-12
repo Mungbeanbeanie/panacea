@@ -363,11 +363,24 @@ real infrastructure wrapped around however real the top of the list is.
    cloning needs privileged `ptrace`/`task_for_pid`, blocked by the same kind of platform
    entitlement story that blocked kernel tracers in item #1). All 3 pre-existing physics
    tests pass unchanged against the real execution path, confirming no behavior regression.
-3. **Real gene payload.** Follows directly from #2 — a gene is `Vec<Allele>` over a
-   3-variant enum (`gene_seq: Vec<u8>`, max 3 bytes on-chain), not compiled bytecode. Once
-   the sandbox is real, the "Wasm Gene Payload" needs to become an actual executable
-   artifact, which reopens the on-chain-storage-size question Phase 12 closed by removing
-   IPFS (a real payload won't fit in an account the way 3 bytes does).
+3. **~~Real gene payload~~ — done.** What's hashed as `Wasm_Gene_Hash` and stored in
+   `gene_seq` is now a real, portable `.wasm` binary, not a `Vec<Allele>` allele-index array.
+   `evolution/alleles.rs` splits the responsibility: `GenePayload { sequence: Vec<Allele> }`
+   stays the in-memory fuzz/regression candidate (unchanged, still what `fuzz()` produces
+   and `LymphNode::run_regression` inspects); `GenePayload::compile()` derives a new
+   `CompiledGene { wasm_bytes: Vec<u8> }` by templating the combo's bitmask into a small
+   fixed WAT skeleton and compiling it via the `wat` crate — the real executable artifact
+   that's hashed, published, fetched, and run. The split is forced by a genuine one-way
+   asymmetry: bytecode is derivable from an allele sequence, not the reverse, and nothing
+   downstream ever needs the reverse direction (post-commit, only hash-verification and
+   execution matter, never "which alleles"). `Sandbox` gained `run_gene(wasm_bytes)` for
+   executing fetched real payloads, verified zero-import just like item #2's shared module
+   (`compiled_gene_has_zero_imports`); the existing fuzz-search `run(combo)` path is
+   untouched. `GeneCommitter`'s trait signature now takes `&CompiledGene` explicitly rather
+   than compiling internally per-implementation — touches 4 impl/def sites plus a live
+   devnet test, all mechanical. On-chain `GENE_SEQ_MAX_LEN` grew from 3 to 256 bytes,
+   measured (not guessed) against a real compiled module: ~104 bytes via `wat::parse_str`,
+   256 giving comfortable headroom.
 4. **Real decentralization of the Lymph Node multisig.** All 5 `LYMPH_NODE_VALIDATORS`
    keypairs are held and signed by one process (`spawn_demo`) — "3-of-5 agreed" currently
    means one process decided to sign 5 times, not 5 independent validators independently

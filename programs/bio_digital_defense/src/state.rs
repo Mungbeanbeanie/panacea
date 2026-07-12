@@ -19,10 +19,11 @@ pub struct ThreatEntry {
 /// Genome Registry (Ledger 3) row: the cure for a `Threat_ID`. Mirrors
 /// `ledger::registry::GenomeEntry`; `epigenetic_status` 0 = Active, 1 = Suppressed (see
 /// suppression-path-test — the kill-switch check reads this field before any gene
-/// fetch/exec). `gene_seq` is the compiled allele sequence itself — a handful of bytes,
-/// smaller than an off-chain content address would be, so the account is the gene's only
-/// home (no IPFS/CID indirection). `gene_hash` stays as the documented `Wasm_Gene_Hash`
-/// identity, verified by the Soldier against a hash it recomputes from `gene_seq`.
+/// fetch/exec). `gene_seq` is the compiled Wasm gene binary itself (a real, portable
+/// `.wasm` produced by `evolution/alleles.rs`'s `GenePayload::compile`) — small enough
+/// (`GENE_SEQ_MAX_LEN` bytes) to be the gene's only home (no IPFS/CID indirection).
+/// `gene_hash` stays as the documented `Wasm_Gene_Hash` identity, verified by the Soldier
+/// against a hash it recomputes from `gene_seq`.
 #[account]
 #[derive(InitSpace, Debug)]
 pub struct GenomeEntry {

@@ -469,6 +469,7 @@ dependencies = [
  "tauri-build",
  "thiserror 2.0.18",
  "wasmi",
+ "wat",
 ]
 
 [[package]]
@@ -6658,6 +6659,7 @@ checksum = "19db11f87d2486580e1e8b6f494c54df7e0566b87d0b599db843c24019667339"
 dependencies = [
  "bitflags 2.13.0",
  "indexmap 2.14.0",
+ "semver",
 ]
 
 [[package]]

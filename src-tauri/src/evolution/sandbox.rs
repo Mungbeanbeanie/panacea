@@ -116,6 +116,33 @@ impl Sandbox {
         }
     }
 
+    /// Runs a real, already-compiled gene (fetched from the Genome Registry) and reports the
+    /// outcome. Unlike [`Sandbox::run`], which reuses the shared cached fuzz-search module,
+    /// this parses `wasm_bytes` fresh — it's fetched/untrusted content representing one
+    /// already-decided committed gene, not the general evaluator used during search. Calls
+    /// its zero-argument `run` export and decodes the result identically to `run()`.
+    pub fn run_gene(&mut self, wasm_bytes: &[u8]) -> TrialOutcome {
+        let module = Module::new(&self.engine, wasm_bytes)
+            .expect("wasm_bytes was already validated by CompiledGene::from_bytes");
+        let mut store = Store::new(&self.engine, ());
+        let linker = Linker::<()>::new(&self.engine);
+        let instance = linker
+            .instantiate_and_start(&mut store, &module)
+            .expect("a compiled gene declares zero imports, so instantiation cannot fail on a missing import");
+        let run = instance
+            .get_typed_func::<(), i32>(&store, "run")
+            .expect("a compiled gene exports exactly one function: run() -> i32");
+        let result = run
+            .call(&mut store, ())
+            .expect("run has no unreachable/OOB/host-call paths, so it cannot trap");
+
+        match result {
+            2 => TrialOutcome::HostDestabilized,
+            1 => TrialOutcome::TargetCrashed,
+            _ => TrialOutcome::TargetSurvived,
+        }
+    }
+
     /// Tears down the sandbox: consumes and drops the cloned target and container. Normal
     /// `Drop` semantics release the `wasmi` engine/module with it — no explicit cleanup
     /// needed.
@@ -176,5 +203,33 @@ mod tests {
             0,
             "the gene-evaluation module must not import any host function"
         );
+    }
+
+    #[test]
+    fn run_gene_reproduces_the_winning_combos_verdict() {
+        use crate::evolution::alleles::GenePayload;
+
+        let gene = GenePayload {
+            sequence: vec![Allele::Allele04, Allele::Allele12],
+        };
+        let compiled = gene.compile();
+
+        let mut sandbox = Sandbox::spawn(mock_target());
+        let outcome = sandbox.run_gene(&compiled.wasm_bytes);
+        assert_eq!(outcome, TrialOutcome::TargetCrashed);
+    }
+
+    #[test]
+    fn run_gene_reproduces_a_losing_combos_verdict() {
+        use crate::evolution::alleles::GenePayload;
+
+        let gene = GenePayload {
+            sequence: vec![Allele::Allele04],
+        };
+        let compiled = gene.compile();
+
+        let mut sandbox = Sandbox::spawn(mock_target());
+        let outcome = sandbox.run_gene(&compiled.wasm_bytes);
+        assert_eq!(outcome, TrialOutcome::TargetSurvived);
     }
 }

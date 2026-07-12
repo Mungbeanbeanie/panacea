@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 pub use bio_digital_defense::{GenomeEntry, ThreatEntry};
 
 use crate::core::ThreatId;
-use crate::evolution::alleles::GenePayload;
+use crate::evolution::alleles::CompiledGene;
 use crate::ledger::state::SolanaLightClient;
 use crate::ledger::LedgerError;
 
@@ -23,7 +23,7 @@ pub trait GenomeSource: Send {
 /// (`agents::soldier::evolve_and_commit`) — a real `SolanaGeneCommitter` (`../client.rs`)
 /// backs the live path; `SharedFakeLedger` backs the offline tests.
 pub trait GeneCommitter: Send {
-    fn commit_gene(&self, threat_id: &ThreatId, gene: &GenePayload) -> Result<(), LedgerError>;
+    fn commit_gene(&self, threat_id: &ThreatId, gene: &CompiledGene) -> Result<(), LedgerError>;
 }
 
 /// Read-through wrapper over the Genome Registry PDA — "cache" means "the read path," not
@@ -80,7 +80,7 @@ impl FakeGenomeSource {
 
     /// Publishes a cure for `threat_id`, starting `Active` — mirrors
     /// `GenomeRegistry::publish()` in the old mock.
-    pub fn publish(&mut self, threat_id: ThreatId, gene: &GenePayload) {
+    pub fn publish(&mut self, threat_id: ThreatId, gene: &CompiledGene) {
         self.entries.insert(
             threat_id,
             GenomeEntry {
@@ -148,7 +148,7 @@ impl GenomeSource for SharedFakeLedger {
 }
 
 impl GeneCommitter for SharedFakeLedger {
-    fn commit_gene(&self, threat_id: &ThreatId, gene: &GenePayload) -> Result<(), LedgerError> {
+    fn commit_gene(&self, threat_id: &ThreatId, gene: &CompiledGene) -> Result<(), LedgerError> {
         self.0.lock().unwrap().publish(*threat_id, gene);
         Ok(())
     }

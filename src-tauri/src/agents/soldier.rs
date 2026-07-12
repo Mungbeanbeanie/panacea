@@ -253,7 +253,7 @@ mod tests {
 }
 
 use crate::core::ThreatId;
-use crate::evolution::alleles::{fuzz, GenePayload};
+use crate::evolution::alleles::{fuzz, CompiledGene};
 use crate::evolution::lymph_node::{LymphNode, RegressionOutcome};
 use crate::evolution::sandbox::{FrozenProcess, Sandbox, TrialOutcome};
 use crate::ledger::registry::{GeneCommitter, GenomeSource, SharedFakeLedger};
@@ -304,8 +304,8 @@ pub fn resolve_and_run(
         return log_outcome(dashboard, threat_id, "gene.suppressed", PharmacyOutcome::Suppressed);
     }
 
-    let gene = match GenePayload::from_bytes(&entry.gene_seq) {
-        Some(gene) if gene.gene_hash().0 == entry.gene_hash => gene,
+    let compiled = match CompiledGene::from_bytes(&entry.gene_seq) {
+        Some(compiled) if compiled.gene_hash().0 == entry.gene_hash => compiled,
         _ => {
             return log_outcome(
                 dashboard,
@@ -316,7 +316,7 @@ pub fn resolve_and_run(
         }
     };
 
-    let trial = sandbox.run(&gene.sequence);
+    let trial = sandbox.run_gene(&compiled.wasm_bytes);
     sandbox.teardown(); // apoptosis
 
     match trial {
@@ -374,7 +374,8 @@ fn evolve_and_commit(
     log_event(dashboard, threat_id, "allergy.checked");
     strain("regression", &format!("{id}-fuzzed"), "regression");
 
-    if pharmacy.committer.commit_gene(threat_id, &gene).is_err() {
+    let compiled = gene.compile();
+    if pharmacy.committer.commit_gene(threat_id, &compiled).is_err() {
         return log_outcome(
             dashboard,
             threat_id,
@@ -457,10 +458,11 @@ mod pharmacy_flow_tests {
     use crate::evolution::sandbox::FrozenProcess;
     use crate::ledger::registry::FakeGenomeSource;
 
-    fn winning_gene() -> GenePayload {
+    fn winning_gene() -> CompiledGene {
         GenePayload {
             sequence: vec![Allele::Allele04, Allele::Allele12],
         }
+        .compile()
     }
 
     fn mock_sandbox() -> Sandbox {
@@ -537,7 +539,7 @@ mod pharmacy_flow_tests {
 
     struct FailingCommitter;
     impl GeneCommitter for FailingCommitter {
-        fn commit_gene(&self, _threat_id: &ThreatId, _gene: &GenePayload) -> Result<(), crate::ledger::LedgerError> {
+        fn commit_gene(&self, _threat_id: &ThreatId, _gene: &CompiledGene) -> Result<(), crate::ledger::LedgerError> {
             Err(crate::ledger::LedgerError::GeneHashMismatch)
         }
     }
@@ -564,7 +566,8 @@ mod live_dispense_tests {
         let ledger = SharedFakeLedger::new();
         let gene = GenePayload {
             sequence: vec![Allele::Allele04, Allele::Allele12],
-        };
+        }
+        .compile();
         ledger.commit_gene(&threat_id, &gene).expect("seed cure");
         if suppressed {
             // The on-chain migration collapsed the old mock's separate "broadcast then
