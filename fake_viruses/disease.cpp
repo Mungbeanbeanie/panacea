@@ -46,6 +46,12 @@ constexpr const char* kDefaultPort = "53";
 // How long to wait between beacon attempts.
 constexpr auto kBeaconInterval = std::chrono::seconds(1);
 
+// How long to hold a successful connection open before closing it — long enough for a
+// polling-based detector (e.g. a periodic `lsof` snapshot) to actually observe it. A raw
+// connect-then-immediately-close cycle can complete in single-digit milliseconds, faster
+// than most observation tools' own per-call overhead.
+constexpr auto kHoldOpenDuration = std::chrono::milliseconds(200);
+
 // Handle SIGINT/SIGTERM by asking the main loop to stop.
 void RequestStop(int /*signal*/) { g_running = false; }
 
@@ -69,6 +75,7 @@ bool BeaconOnce(const std::string& host, const std::string& port) {
     }
     if (connect(fd, addr->ai_addr, addr->ai_addrlen) == 0) {
       connected = true;
+      std::this_thread::sleep_for(kHoldOpenDuration);
     }
     close(fd);
     if (connected) {

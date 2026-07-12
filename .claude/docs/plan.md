@@ -269,3 +269,89 @@ sandbox host stay fake): the scripted target as the "virus," the mock host insid
 100 pts → Soldier wake → fuzz-discovered gene committed on devnet (gene bytes in the account,
 no IPFS) → `Neutralized`, then a `suppress_gene` transaction halting the next wake — no manual
 seeding.
+
+## Phase 13 — Beyond the Demo (path to a real implementation)
+
+**Owner:** unassigned · **Depends on:** 0–12 · not required for the PoC bar (`CLAUDE.md`:
+"it compiles and the demo works") — this is the gap between that bar and a system you'd
+trust with real endpoints and real adversaries. Ordered by importance: fixing #1–2 changes
+whether this is a real antivirus that happens to use a blockchain; everything below them is
+real infrastructure wrapped around however real the top of the list is.
+
+1. **~~Real Scout / behavioral detection substrate~~ — done for 2 of 3 actions.**
+   `RealBehaviorSource` (`agents/scout.rs`) replaces `ScriptedSource`, spawning real
+   `fake_viruses/virus`/`disease` processes and detecting their actual behavior via `lsof`
+   (fd-count burst → `HighEntropyFileLoop`; live connection → `NetEnumWithVssTamper`),
+   verified against real specimens with `#[ignore]`d tests
+   (`disease_specimen_is_really_detected_and_woken`,
+   `virus_specimen_is_really_detected_and_woken`). A real engineering problem surfaced and
+   got fixed along the way: at every polling rate tried (500ms down to bash-loop-max-speed
+   ~48ms), `lsof` almost never caught either specimen's original suspicious window (`disease`
+   2/41 hits; `virus` never once above baseline) — `lsof` itself takes ~40-50ms/call, faster
+   than the specimens' original single-digit-millisecond windows. Fixed by widening the
+   specimens' own windows (`kHoldOpenDuration = 200ms` in both `.cpp` files) rather than
+   switching to a less-honest detection signal (parsing the specimens' own stdout was
+   considered and rejected — it would've just been `ScriptedSource`'s cooperative-signal
+   problem again, dressed up). `Action::HiddenChildFromTemp` (`bacteria`) still has **no
+   real detector** — deliberately deferred, not faked: `bacteria` re-forks itself with no
+   `exec()`, so there's no Temp-directory path to check against the literal spec wording;
+   revisit when a real temp-dir-dropper specimen exists. No kernel-level tracer (eBPF/
+   ETW/EndpointSecurity) — each is blocked for this project specifically, not just costly
+   (macOS's EndpointSecurity needs an Apple entitlement granted only to vetted security
+   vendors), not just deprioritized effort.
+2. **Real sandbox / execution substrate.** `Sandbox::run()` is a hardcoded `match` on
+   allele identity (`Allele09` → always destabilizes; `Allele04`+`Allele12` → always
+   crashes), not a MicroVM/Firecracker/Wasm runtime — there is no actual isolated execution
+   happening. `fuzz()`'s combinatorial search is real, but it's searching against a
+   lookup table with a pre-written answer, not a real target's real behavior. Tied with #1
+   for most important: a real Scout feeding a fake sandbox still can't produce a cure that
+   does anything.
+3. **Real gene payload.** Follows directly from #2 — a gene is `Vec<Allele>` over a
+   3-variant enum (`gene_seq: Vec<u8>`, max 3 bytes on-chain), not compiled bytecode. Once
+   the sandbox is real, the "Wasm Gene Payload" needs to become an actual executable
+   artifact, which reopens the on-chain-storage-size question Phase 12 closed by removing
+   IPFS (a real payload won't fit in an account the way 3 bytes does).
+4. **Real decentralization of the Lymph Node multisig.** All 5 `LYMPH_NODE_VALIDATORS`
+   keypairs are held and signed by one process (`spawn_demo`) — "3-of-5 agreed" currently
+   means one process decided to sign 5 times, not 5 independent validators independently
+   agreeing. The validator set is also hardcoded in `constants.rs` with no governance,
+   rotation, or on-chain registry — and it already drifted out of sync with the actual
+   keypair files once this session, caught only by chance when a live test happened to run
+   (see Phase 12's note). Needs: actually-separate validator services, each running its own
+   regression check before signing, plus a way to add/rotate/verify the validator set that
+   isn't hand-copying pubkeys into a Rust source file.
+5. **Real Lymph Node regression corpus.** `TOP_APPS` is 4 hardcoded entries with a static
+   `allergic_to` lookup, not "Top 5,000 apps" actually executed and observed for
+   crash/leak. Needs a real corpus and a real execution/observation step, not a match
+   statement.
+6. **Threat Registry schema persistence + a real mobilization subscriber.** Only
+   `behavioral_schema_hash` reaches the chain — the raw `Behavioral_Schema` a Scout
+   observed exists only in that process's memory for one report's lifetime, so a second
+   endpoint with a matching hash has no way to retrieve *what the schema was*. Separately,
+   `ThreatMobilized` fires and gets logged but nothing *acts* on it — no other endpoint is
+   notified, no automated response starts.
+7. **Multi-endpoint reality.** Everything above assumes one endpoint. The "collective
+   memory" and "crowd-sourced immunity" framing needs an actual network of independent
+   Scouts whose sightings genuinely correlate — today `MOBILIZATION_THRESHOLD` is only ever
+   crossed by the same one process reporting twice.
+8. **Kill-switch automation + a governed reactivation path.** Suppression only happens
+   because a human calls `suppress_gene` — no monitoring/alerting layer proposes it
+   automatically. Separately, `commit_gene`'s guard permanently refuses to reactivate a
+   suppressed gene (deliberate, for the demo's safety story); a real system likely wants a
+   reactivation path gated by its own multisig for a wrongly-flagged allergy, rather than a
+   permanently dead gene.
+9. **Windows support.** `suspend()`/`release_target()` are `#[cfg(unix)]` with a no-op
+   stub elsewhere — no `NtSuspendProcess`-based suspension despite the CI matrix building
+   for `windows-latest`. Ranked low deliberately: this is platform breadth, not core
+   function — adding it doesn't change whether the system detects or cures anything real.
+10. **Production ops hardening.** Devnet only, no mainnet posture; single public RPC
+    endpoint with no fallback; program upgrade authority is a single wallet with no
+    multisig/timelock (and the currently-deployed program's authority doesn't match the
+    locally-recorded deployer wallet — worth reconciling); all keypairs are plain local
+    JSON files with no HSM/secrets-manager story; CI builds `src-tauri` across 3 OSes but
+    doesn't appear to build or test `programs/bio_digital_defense`, so an on-chain-program
+    regression wouldn't fail CI the way a Rust-core one would.
+
+**Done when:** items 1–3 land and the demo's "detection → evolved cure" claim is true
+against a real (even if simple) syscall observer and a real (even if minimal) execution
+sandbox, rather than a script and a lookup table.

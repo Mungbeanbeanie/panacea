@@ -45,6 +45,12 @@ constexpr auto kSweepInterval = std::chrono::seconds(1);
 // Bytes to read from the front of each file (then discarded).
 constexpr size_t kReadChunkBytes = 4096;
 
+// How long to hold each opened file descriptor before closing it — long enough for a
+// polling-based detector (e.g. a periodic `lsof` snapshot) to actually observe the
+// concurrent-open burst. Since all readers in a batch are joined together, holding each
+// one individually keeps the whole batch open concurrently during the shared window.
+constexpr auto kHoldOpenDuration = std::chrono::milliseconds(200);
+
 // How many files to open concurrently per sweep.
 constexpr size_t kConcurrentReaders = 8;
 
@@ -79,6 +85,7 @@ bool ReadFilePrefix(const std::string& path) {
   std::vector<char> buffer(kReadChunkBytes);
   ssize_t bytes_read = read(fd, buffer.data(), buffer.size());
   (void)bytes_read;  // content intentionally read and discarded
+  std::this_thread::sleep_for(kHoldOpenDuration);
   close(fd);
   return true;
 }

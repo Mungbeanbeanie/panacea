@@ -29,6 +29,12 @@ anchor deploy --provider.cluster devnet   # confirm exact script/cluster name in
 # One-time devnet keypair setup per endpoint / Lymph Node validator (no real funds)
 solana-keygen new -o ~/.config/solana/id.json
 solana airdrop 2 --url devnet
+
+# Build the real detection test specimens before running the demo — the live Scout
+# (agents::scout::spawn_demo) spawns these directly; RealBehaviorSource fails loudly if
+# they're missing, and any binaries already committed may be built for a different OS/arch
+# than this machine.
+make -C fake_viruses
 ```
 
 Anchor/Solana command names above are the standard CLI surface — confirm the exact

@@ -196,51 +196,131 @@ fn process_name(pid: Pid) -> String {
     format!("pid-{pid}")
 }
 
-/// The scripted trajectory the PoC target performs — A → B → C, summing 20 + 50 + 40 = 110,
-/// crossing the 100-pt threshold on the third action. Shared so the demo pharmacy can publish
-/// a cure under the same `Threat_ID` the Scout will emit for it.
-pub const SCRIPTED_TRAJECTORY: [Action; 3] = [
-    Action::HiddenChildFromTemp,
-    Action::NetEnumWithVssTamper,
-    Action::HighEntropyFileLoop,
-];
-
-/// The `Threat_ID` the Scout emits for [`SCRIPTED_TRAJECTORY`].
-pub fn scripted_threat_id() -> ThreatId {
-    threat_id(&BehavioralSchema {
-        actions: SCRIPTED_TRAJECTORY.to_vec(),
-    })
+/// Which real `fake_viruses/` specimen a watched PID is, and therefore which detector
+/// `poll()` runs against it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecimenKind {
+    /// `fake_viruses/virus` — bulk concurrent file reader.
+    Virus,
+    /// `fake_viruses/disease` — periodic TCP beacon.
+    Disease,
 }
 
-/// PoC behavior source: replays [`SCRIPTED_TRAJECTORY`] against one real target PID, then goes
-/// quiet. One action per tick, so the trajectory climbs 20 → 70 → 110 and fires on the third.
-pub struct ScriptedSource {
-    target: Pid,
-    script: std::vec::IntoIter<Action>,
+/// Minimum open file descriptors (via `lsof -p`, header line excluded) to count `virus`'s
+/// read burst as `Action::HighEntropyFileLoop`. Calibrated against a real run, not guessed:
+/// `virus`'s idle baseline (its own threads/stdio/loaded libraries) measured ~6; a real
+/// concurrent-8-file burst (after the specimens were widened to hold fds open long enough
+/// to observe — see `kHoldOpenDuration` in `fake_viruses/virus.cpp`) measured ~13. This sits
+/// between the two.
+const VIRUS_FD_THRESHOLD: usize = 9;
+
+/// Real behavior source: observes actual OS state of real target processes via `lsof`
+/// shell-outs (no kernel-level tracer — eBPF/ETW/EndpointSecurity are each blocked for this
+/// project, not just costly: eBPF is Linux-only and needs root; ETW is Windows-only,
+/// already deprioritized; macOS's EndpointSecurity needs an Apple entitlement granted only
+/// to vetted security vendors). Covers `Action::HighEntropyFileLoop` (`virus`) and
+/// `Action::NetEnumWithVssTamper` (`disease`) only — `Action::HiddenChildFromTemp` has no
+/// real specimen yet (`bacteria` re-forks itself with no `exec()`, so there's no
+/// Temp-directory path to check; revisit when a real temp-dir-dropper specimen exists).
+/// Each watched PID is independent: `Scout::tick()` sums `weight(action)` for every
+/// observation with no dedup by type, so a specimen doing its one suspicious thing
+/// continuously climbs toward the threshold on its own, no combining needed.
+pub struct RealBehaviorSource {
+    targets: Vec<(Pid, SpecimenKind)>,
 }
 
-impl ScriptedSource {
-    /// Spawn a benign helper process to stand in for the "bad" process and script its
-    /// trajectory across the 100-pt threshold. Returns the source and the helper handle;
-    /// the caller keeps the handle alive for the demo's lifetime.
-    pub fn spawn_target() -> std::io::Result<(Self, std::process::Child)> {
-        let child = std::process::Command::new("sleep").arg("600").spawn()?;
-        let target = child.id();
-        let script = SCRIPTED_TRAJECTORY.to_vec().into_iter();
-        Ok((Self { target, script }, child))
+impl RealBehaviorSource {
+    pub fn new(targets: Vec<(Pid, SpecimenKind)>) -> Self {
+        Self { targets }
     }
 }
 
-impl BehaviorSource for ScriptedSource {
+impl BehaviorSource for RealBehaviorSource {
     fn poll(&mut self) -> Vec<Observation> {
-        match self.script.next() {
-            Some(action) => vec![Observation {
-                pid: self.target,
-                action,
-            }],
-            None => Vec::new(),
-        }
+        self.targets
+            .iter()
+            .filter_map(|&(pid, kind)| {
+                let detected = match kind {
+                    SpecimenKind::Virus => open_fd_count(pid) > VIRUS_FD_THRESHOLD,
+                    SpecimenKind::Disease => has_outbound_connection(pid),
+                };
+                detected.then_some(Observation {
+                    pid,
+                    action: match kind {
+                        SpecimenKind::Virus => Action::HighEntropyFileLoop,
+                        SpecimenKind::Disease => Action::NetEnumWithVssTamper,
+                    },
+                })
+            })
+            .collect()
     }
+}
+
+/// Real open-file-descriptor count for `pid`, via `lsof -p` (subtracting `lsof`'s own
+/// header line). `0` if `lsof` fails or the process has already exited — never an error, a
+/// dead PID just isn't suspicious.
+#[cfg(unix)]
+fn open_fd_count(pid: Pid) -> usize {
+    std::process::Command::new("lsof")
+        .args(["-p", &pid.to_string()])
+        .output()
+        .ok()
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .count()
+                .saturating_sub(1) // header line
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(not(unix))]
+fn open_fd_count(_pid: Pid) -> usize {
+    0
+}
+
+/// Whether `pid` currently holds any network connection, via `lsof -i -a -p`.
+#[cfg(unix)]
+fn has_outbound_connection(pid: Pid) -> bool {
+    std::process::Command::new("lsof")
+        .args(["-i", "-a", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .map(|out| !out.stdout.is_empty())
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn has_outbound_connection(_pid: Pid) -> bool {
+    false
+}
+
+/// Spawns a real `fake_viruses/` specimen binary, failing loudly (not silently) if it's
+/// missing — run `make` in `fake_viruses/` first (see
+/// ../../.claude/docs/build-run-test.md).
+fn spawn_specimen(name: &str, args: &[&str]) -> std::process::Child {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{manifest_dir}/../fake_viruses/{name}");
+    std::process::Command::new(&path)
+        .args(args)
+        .spawn()
+        .unwrap_or_else(|e| {
+            panic!(
+                "failed to spawn {path}: {e} — run `make` in fake_viruses/ first \
+                 (see .claude/docs/build-run-test.md)"
+            )
+        })
+}
+
+/// The `Threat_ID` a real `disease` process deterministically produces: its one behavior
+/// (`Action::NetEnumWithVssTamper`, 50 pts) fires the moment the trajectory hits exactly 2
+/// detections (50 + 50 = 100 = `ANOMALY_THRESHOLD`) — `Scout::tick()` checks the threshold
+/// immediately after each observation, so this is deterministic regardless of exactly how
+/// many polls it takes to catch those 2 real beacons.
+fn disease_threat_id() -> ThreatId {
+    threat_id(&BehavioralSchema {
+        actions: vec![Action::NetEnumWithVssTamper, Action::NetEnumWithVssTamper],
+    })
 }
 
 /// `Behavioral_Schema` hash submitted to the Threat Registry PDA — mirrors [`threat_id`]'s
@@ -253,19 +333,21 @@ fn behavioral_schema_hash(schema: &BehavioralSchema) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Live demo entry point: wires a scripted target against the **real** Solana devnet
-/// program (Phase 12 — closes the live-path gaps Phase 11 left: real events, live
-/// evolution, happy-path-before-kill-switch, and mobilization). Runs the scripted
-/// trajectory twice against the same `Threat_ID`:
+/// Live demo entry point: wires two real, independent `fake_viruses/` specimens against the
+/// **real** Solana devnet program and a **real** behavioral detector (Phase 13, item 1 —
+/// closes the last major gap Phase 12 left: detection itself was still a hardcoded script).
 ///
-/// 1. Wave 1: no cure is published yet, so the Soldier evolves one live (fuzz → allergy
-///    check → `commit_gene`) and dispenses it — `Neutralized`, shown before any suppression.
-/// 2. Once wave 1 completes, `suppress_gene` flips the kill-switch, and wave 2 (a fresh
-///    scripted target, same trajectory) shows the halt — `Suppressed`.
+/// 1. Wave 1: `virus` and `disease` are spawned as real processes and watched concurrently
+///    by one Scout. Each is detected independently (no cure published yet for either), so
+///    the Soldier evolves one live (fuzz → allergy check → `commit_gene`) and dispenses it
+///    for each — two `Neutralized` outcomes, shown before any suppression.
+/// 2. Once both resolve, `suppress_gene` flips the kill-switch on `disease`'s cure
+///    specifically (its schema is deterministic — see [`disease_threat_id`]), and wave 2 (a
+///    fresh `disease` process, same real behavior, same `Threat_ID`) shows the halt.
 ///
-/// Both waves' `submit_threat` calls hit the same `Threat_ID`, so `Confidence_Score` also
-/// crosses `MOBILIZATION_THRESHOLD` on wave 2 — the network-wide mobilization event fires
-/// alongside the kill-switch demonstration.
+/// Both `disease` submissions hit the same `Threat_ID`, so `Confidence_Score` also crosses
+/// `MOBILIZATION_THRESHOLD` on wave 2 — the network-wide mobilization event fires alongside
+/// the kill-switch demonstration, exactly as it did before this real-detection pass.
 pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
     use anchor_client::Cluster;
     use solana_keypair::read_keypair_file;
@@ -357,22 +439,36 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
         }
     });
 
-    // Wave 1.
-    let (source, child) =
-        ScriptedSource::spawn_target().expect("failed to spawn scripted target process");
-    // Drop the helper handle: the Scout suspends it on threshold cross and the Soldier
-    // releases and terminates it during apoptosis; any residue is reaped on app exit.
-    drop(child);
+    // Wave 1: two real, independent specimens, watched concurrently by one Scout. `virus`
+    // needs a directory with enough files for its read burst to actually cross the fd
+    // threshold — fake_viruses/ itself qualifies (Makefile + 3 .cpp + 3 binaries = 7).
+    let fake_viruses_dir = format!("{manifest_dir}/../fake_viruses");
+    let virus_child = spawn_specimen("virus", &[fake_viruses_dir.as_str()]);
+    let disease_child = spawn_specimen("disease", &[]);
+    let source = RealBehaviorSource::new(vec![
+        (virus_child.id(), SpecimenKind::Virus),
+        (disease_child.id(), SpecimenKind::Disease),
+    ]);
+    // Drop the handles: the Scout suspends each on threshold cross and the Soldier releases
+    // and terminates it during apoptosis; any residue is reaped on app exit.
+    drop(virus_child);
+    drop(disease_child);
     Scout::new(source, wake_tx.clone(), threat_tx.clone(), Some(dashboard.clone())).spawn();
 
-    match outcome_rx.recv() {
-        Ok(outcome) => println!("[demo] wave 1 outcome: {outcome:?}"),
-        Err(_) => eprintln!("[demo] soldier channel closed before wave 1 completed"),
+    // Two independent threats this wave, so two outcomes.
+    for _ in 0..2 {
+        match outcome_rx.recv() {
+            Ok(outcome) => println!("[demo] wave 1 outcome: {outcome:?}"),
+            Err(_) => {
+                eprintln!("[demo] soldier channel closed before wave 1 completed");
+                break;
+            }
+        }
     }
 
-    // Kill-switch, then wave 2 against a fresh target running the identical trajectory
-    // (same Threat_ID) to show the halt.
-    let threat_id = scripted_threat_id();
+    // Kill-switch, then wave 2: suppress disease's cure and re-trigger the identical real
+    // behavior (same deterministic schema, same Threat_ID) to show the halt.
+    let threat_id = disease_threat_id();
     match committer.suppress(threat_id) {
         Ok(sig) => {
             println!("[ledger3] suppress_gene {sig}");
@@ -381,9 +477,9 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
         Err(e) => eprintln!("[ledger3] suppress_gene failed: {e}"),
     }
 
-    let (source2, child2) = ScriptedSource::spawn_target()
-        .expect("failed to spawn scripted target process (wave 2)");
-    drop(child2);
+    let disease_child2 = spawn_specimen("disease", &[]);
+    let source2 = RealBehaviorSource::new(vec![(disease_child2.id(), SpecimenKind::Disease)]);
+    drop(disease_child2);
     Scout::new(source2, wake_tx, threat_tx, Some(dashboard)).spawn()
 }
 
@@ -433,45 +529,86 @@ mod tests {
         assert!(wake_rx.try_recv().is_err());
     }
 
-    /// End-to-end proof of the done-when: a scripted target really crosses 100 pts, is
-    /// suspended by the OS, and the spore is signaled. Spawns a real process and `SIGSTOP`s
-    /// it, so it's `#[ignore]`d out of CI — run locally with `cargo test -- --ignored`.
+    /// End-to-end proof that real detection works: a real `fake_viruses/disease` process
+    /// really beacons, `RealBehaviorSource` really observes it via `lsof`, and the
+    /// trajectory really crosses 100 pts and wakes. Needs `make` run in `fake_viruses/`
+    /// first and real wall-clock time for the specimen to actually beacon twice, so it's
+    /// `#[ignore]`d out of CI — run locally with `cargo test -- --ignored`.
     #[test]
-    #[ignore = "spawns and SIGSTOPs a real process; run locally with --ignored"]
+    #[ignore = "spawns a real fake_viruses/disease process; run locally with --ignored, \
+                after `make` in fake_viruses/"]
     #[cfg(unix)]
-    fn scripted_target_is_really_suspended() {
-        use std::process::Command;
-
-        let (source, child) = ScriptedSource::spawn_target().expect("spawn helper");
+    fn disease_specimen_is_really_detected_and_woken() {
+        let mut child = spawn_specimen("disease", &[]);
         let pid = child.id();
         let (wake_tx, wake_rx) = channel();
         let (threat_tx, _threat_rx) = channel();
-        let mut scout = Scout::new(source, wake_tx, threat_tx, None);
-
-        // One scripted action per tick: A (20) → B (70) → C (110, fires).
-        scout.tick();
-        scout.tick();
-        scout.tick();
-
-        let wake = wake_rx.try_recv().expect("expected a wake signal");
-        assert_eq!(wake.pid, pid, "wake signal targets the real helper PID");
-
-        // The OS should report the helper stopped ('T').
-        let out = Command::new("ps")
-            .args(["-o", "stat=", "-p", &pid.to_string()])
-            .output()
-            .expect("run ps");
-        let stat = String::from_utf8_lossy(&out.stdout).trim().to_string();
-
-        // Clean up no matter what the assertion finds: continue, then terminate.
-        let _ = Command::new("kill")
-            .args(["-CONT", &pid.to_string()])
-            .status();
-        let _ = Command::new("kill").arg("-9").arg(pid.to_string()).status();
-
-        assert!(
-            stat.starts_with('T'),
-            "expected helper {pid} to be stopped (T); ps stat was {stat:?}"
+        let mut scout = Scout::new(
+            RealBehaviorSource::new(vec![(pid, SpecimenKind::Disease)]),
+            wake_tx,
+            threat_tx,
+            None,
         );
+
+        // disease beacons roughly once/sec; give it up to 10 real ticks (~5s) to be
+        // observed twice (50 + 50 = 100, crossing ANOMALY_THRESHOLD).
+        let mut wake_signal = None;
+        for _ in 0..10 {
+            scout.tick();
+            if let Ok(wake) = wake_rx.try_recv() {
+                wake_signal = Some(wake);
+                break;
+            }
+            thread::sleep(TICK_INTERVAL);
+        }
+
+        // Clean up regardless of the assertion outcome.
+        let _ = child.kill();
+        let _ = child.wait();
+
+        let wake = wake_signal
+            .expect("expected the real disease specimen to be detected and woken within 10 ticks");
+        assert_eq!(wake.pid, pid, "wake signal targets the real specimen PID");
+    }
+
+    /// Same shape as the `disease` test, for `virus` — verifies `VIRUS_FD_THRESHOLD`'s
+    /// recalibration (baseline ~6, burst ~13) actually distinguishes idle from bursting on
+    /// a real run, not just the ad-hoc `lsof` probe used to pick the number.
+    #[test]
+    #[ignore = "spawns a real fake_viruses/virus process; run locally with --ignored, \
+                after `make` in fake_viruses/"]
+    #[cfg(unix)]
+    fn virus_specimen_is_really_detected_and_woken() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let fake_viruses_dir = format!("{manifest_dir}/../fake_viruses");
+        let mut child = spawn_specimen("virus", &[fake_viruses_dir.as_str()]);
+        let pid = child.id();
+        let (wake_tx, wake_rx) = channel();
+        let (threat_tx, _threat_rx) = channel();
+        let mut scout = Scout::new(
+            RealBehaviorSource::new(vec![(pid, SpecimenKind::Virus)]),
+            wake_tx,
+            threat_tx,
+            None,
+        );
+
+        // virus sweeps roughly once/sec; give it up to 10 real ticks (~5s) to be observed
+        // 3 times (40 + 40 + 40 = 120, crossing ANOMALY_THRESHOLD at the 3rd).
+        let mut wake_signal = None;
+        for _ in 0..10 {
+            scout.tick();
+            if let Ok(wake) = wake_rx.try_recv() {
+                wake_signal = Some(wake);
+                break;
+            }
+            thread::sleep(TICK_INTERVAL);
+        }
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        let wake = wake_signal
+            .expect("expected the real virus specimen to be detected and woken within 10 ticks");
+        assert_eq!(wake.pid, pid, "wake signal targets the real specimen PID");
     }
 }
