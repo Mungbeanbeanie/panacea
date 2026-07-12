@@ -108,7 +108,7 @@ export default function Dashboard({ auth, navigate }) {
     return { key: ev.id, time: ev.at, color: copy.color, text: copy.text(ev.threatId) };
   });
 
-  const blocks = (ledger ?? []).slice(0, 2).map((ev, i) => {
+  const blocks = (ledger ?? []).map((ev, i) => {
     const status = LEDGER_BLOCK_STATUS[ev.kind] ?? { label: "Pending verification", color: colors.textFaint };
     return {
       key: ev.id,
@@ -293,26 +293,28 @@ export default function Dashboard({ auth, navigate }) {
             {blocks.length === 0 ? (
               <p style={{ fontSize: 13, color: colors.textFaint, margin: 0 }}>Waiting for ledger events…</p>
             ) : (
-              blocks.map((blk) => (
-                <div key={blk.key} style={{ background: colors.block, border: `1px solid ${colors.borderPanel}`, borderRadius: 10, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontFamily: fontDisplay, fontSize: 14, fontWeight: 700 }}>BLCK #{blk.num}</span>
-                    <span style={{ fontSize: 12, color: colors.textFaint, fontVariantNumeric: "tabular-nums" }}>{blk.ago}</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 420, overflowY: "auto", paddingRight: 4 }}>
+                {blocks.map((blk) => (
+                  <div key={blk.key} style={{ background: colors.block, border: `1px solid ${colors.borderPanel}`, borderRadius: 10, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontFamily: fontDisplay, fontSize: 14, fontWeight: 700 }}>BLCK #{blk.num}</span>
+                      <span style={{ fontSize: 12, color: colors.textFaint, fontVariantNumeric: "tabular-nums" }}>{blk.ago}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                      <span style={{ color: colors.textFaint, minWidth: 92 }}>Trajectory</span>
+                      <span style={{ fontFamily: fontDisplay, color: colors.textSecondary }}>{blk.trajectory}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                      <span style={{ color: colors.textFaint, minWidth: 92 }}>Threat hash</span>
+                      <span style={{ fontFamily: fontDisplay, color: colors.lavender }}>{blk.threatHash}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                      <span style={{ color: colors.textFaint, minWidth: 92 }}>Status</span>
+                      <span style={{ fontWeight: 600, color: blk.statusColor }}>{blk.status}</span>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                    <span style={{ color: colors.textFaint, minWidth: 92 }}>Trajectory</span>
-                    <span style={{ fontFamily: fontDisplay, color: colors.textSecondary }}>{blk.trajectory}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                    <span style={{ color: colors.textFaint, minWidth: 92 }}>Threat hash</span>
-                    <span style={{ fontFamily: fontDisplay, color: colors.lavender }}>{blk.threatHash}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                    <span style={{ color: colors.textFaint, minWidth: 92 }}>Status</span>
-                    <span style={{ fontWeight: 600, color: blk.statusColor }}>{blk.status}</span>
-                  </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
 

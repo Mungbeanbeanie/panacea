@@ -449,24 +449,30 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
         }
     });
 
-    // Wave 1: two real, independent specimens, watched concurrently by one Scout. `virus`
-    // needs a directory with enough files for its read burst to actually cross the fd
-    // threshold — fake_viruses/ itself qualifies (Makefile + 3 .cpp + 3 binaries = 7).
+    // Wave 1: several real, independent specimens, watched concurrently by one Scout.
+    // `virus` needs a directory with enough files for its read burst to actually cross the
+    // fd threshold — fake_viruses/ itself qualifies (Makefile + 3 .cpp + 3 binaries = 7).
+    // `WAVE1_COPIES` concurrent copies each of `virus`/`disease`: same two real detectors,
+    // more simultaneous catches to watch land in the dashboard. Repeat copies share their
+    // specimen type's deterministic Threat_ID (the schema hash doesn't depend on PID), so
+    // copies past the first one demonstrate Ledger 2's confidence-matching/mobilization path
+    // rather than minting new threats.
+    const WAVE1_COPIES: usize = 2;
     let fake_viruses_dir = format!("{manifest_dir}/../fake_viruses");
-    let virus_child = spawn_specimen("virus", &[fake_viruses_dir.as_str()]);
-    let disease_child = spawn_specimen("disease", &[]);
-    let source = RealBehaviorSource::new(vec![
-        (virus_child.id(), SpecimenKind::Virus),
-        (disease_child.id(), SpecimenKind::Disease),
-    ]);
-    // Drop the handles: the Scout suspends each on threshold cross and the Soldier releases
-    // and terminates it during apoptosis; any residue is reaped on app exit.
-    drop(virus_child);
-    drop(disease_child);
+    let mut targets = Vec::with_capacity(WAVE1_COPIES * 2);
+    for _ in 0..WAVE1_COPIES {
+        let virus_child = spawn_specimen("virus", &[fake_viruses_dir.as_str()]);
+        targets.push((virus_child.id(), SpecimenKind::Virus));
+        drop(virus_child); // Scout suspends on threshold cross; Soldier reaps on apoptosis.
+        let disease_child = spawn_specimen("disease", &[]);
+        targets.push((disease_child.id(), SpecimenKind::Disease));
+        drop(disease_child);
+    }
+    let source = RealBehaviorSource::new(targets);
     Scout::new(source, wake_tx.clone(), threat_tx.clone(), Some(dashboard.clone())).spawn();
 
-    // Two independent threats this wave, so two outcomes.
-    for _ in 0..2 {
+    // One outcome per specimen this wave.
+    for _ in 0..(WAVE1_COPIES * 2) {
         match outcome_rx.recv() {
             Ok(outcome) => println!("[demo] wave 1 outcome: {outcome:?}"),
             Err(_) => {
