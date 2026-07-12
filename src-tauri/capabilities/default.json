@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window: baseline core permissions (window, app, path, and the `core:event` listen/emit used by every dashboard stream in useTauriEvents.js).",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

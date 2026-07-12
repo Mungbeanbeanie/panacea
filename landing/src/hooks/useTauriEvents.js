@@ -77,15 +77,22 @@ export function useTauriEvents(stream) {
     const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
     if (isTauri) {
-      import("@tauri-apps/api/event").then(({ listen }) =>
-        listen(stream, (event) => {
-          setData(event.payload);
-          armDropTimer();
+      import("@tauri-apps/api/event")
+        .then(({ listen }) =>
+          listen(stream, (event) => {
+            setData(event.payload);
+            armDropTimer();
+          })
+        )
+        .then((fn) => {
+          if (cancelled) fn();
+          else unlisten = fn;
         })
-      ).then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      });
+        .catch((err) => {
+          // Fails loud instead of leaving the view stuck on "no data" forever with no
+          // clue why — e.g. a missing capability grant rejects listen() by ACL.
+          console.error(`[useTauriEvents] failed to subscribe to "${stream}":`, err);
+        });
     } else {
       const generate = MOCK_GENERATORS[stream];
       if (generate) {
