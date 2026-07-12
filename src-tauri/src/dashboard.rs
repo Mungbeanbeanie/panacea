@@ -4,16 +4,22 @@
 //! module only mirrors state changes out to the UI, never the other way around.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use sysinfo::{Disks, System};
 use tauri::{AppHandle, Emitter};
 
 use crate::core::Pid;
 
 /// Matches `LedgerTerminal.jsx`'s cap on the mock generator's event list.
 const LEDGER_CAP: usize = 25;
+
+/// How often [`Dashboard::spawn_reemit`] re-broadcasts state and stats.
+const REEMIT_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Serialize, Clone)]
 struct EcosystemNode {
@@ -41,6 +47,25 @@ struct StrainNode {
     stage: &'static str,
 }
 
+/// Real host/network metrics for the `stats` stream (`Dashboard.jsx`). Emitted alongside
+/// each re-emit tick — see [`Dashboard::spawn_reemit`].
+#[derive(Serialize, Clone)]
+struct Stats {
+    #[serde(rename = "ramMb")]
+    ram_mb: u64,
+    #[serde(rename = "cpuPct")]
+    cpu_pct: f32,
+    #[serde(rename = "diskUsedGb")]
+    disk_used_gb: f64,
+    #[serde(rename = "diskTotalGb")]
+    disk_total_gb: f64,
+    #[serde(rename = "uptimeSecs")]
+    uptime_secs: u64,
+    scouts: usize,
+    monitored: usize,
+    slot: Option<u64>,
+}
+
 #[derive(Default)]
 struct State {
     ecosystem: HashMap<Pid, EcosystemNode>,
@@ -54,6 +79,10 @@ struct State {
 pub struct Dashboard {
     app: AppHandle,
     state: Mutex<State>,
+    /// Bumped once per [`crate::agents::scout::Scout::spawn`] call; mirrored in the `stats`
+    /// stream's `scouts` field. A plain counter, not part of `State`, since it only ever
+    /// grows and needs no snapshot consistency with the other fields.
+    scouts: AtomicUsize,
 }
 
 impl Dashboard {
@@ -71,9 +100,15 @@ impl Dashboard {
                 }],
                 ..State::default()
             }),
+            scouts: AtomicUsize::new(0),
         };
         dashboard.emit_strains();
         dashboard
+    }
+
+    /// Records that one more Scout daemon started watching processes.
+    pub fn note_scout_spawned(&self) {
+        self.scouts.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Records/updates one PID's Stage-1 trajectory for `EcosystemGraph.jsx`.
@@ -138,6 +173,65 @@ impl Dashboard {
 
     fn emit_strains_locked(&self, state: &State) {
         let _ = self.app.emit("strains", state.strains.clone());
+    }
+
+    /// Re-broadcasts the current `ecosystem`/`ledger`/`strains` snapshot plus a `stats`
+    /// event every [`REEMIT_INTERVAL`]. Fixes two gaps edge-triggered `emit` alone leaves:
+    /// a view that mounts after the last state change (late subscriber) and a demo that has
+    /// finished emitting (dead air read as a dropped stream). `get_slot` is `spawn_demo`'s
+    /// devnet RPC slot lookup, called fresh each tick; `None` on any RPC failure never blocks
+    /// the loop.
+    pub fn spawn_reemit(
+        self: &Arc<Self>,
+        get_slot: impl Fn() -> Option<u64> + Send + 'static,
+    ) -> JoinHandle<()> {
+        let dashboard = self.clone();
+        thread::spawn(move || {
+            let mut sys = System::new_all();
+            loop {
+                thread::sleep(REEMIT_INTERVAL);
+
+                let (ecosystem, ledger, strains, monitored) = {
+                    let state = dashboard.state.lock().unwrap();
+                    (
+                        state.ecosystem.values().cloned().collect::<Vec<_>>(),
+                        state.ledger.iter().cloned().collect::<Vec<_>>(),
+                        state.strains.clone(),
+                        state.ecosystem.len(),
+                    )
+                };
+                let _ = dashboard.app.emit("ecosystem", ecosystem);
+                let _ = dashboard.app.emit("ledger", ledger);
+                let _ = dashboard.app.emit("strains", strains);
+
+                sys.refresh_cpu_usage();
+                sys.refresh_memory();
+                let disks = Disks::new_with_refreshed_list();
+                let (disk_used, disk_total) = disks.list().iter().fold(
+                    (0u64, 0u64),
+                    |(used, total), disk| {
+                        (
+                            used + disk.total_space().saturating_sub(disk.available_space()),
+                            total + disk.total_space(),
+                        )
+                    },
+                );
+
+                let _ = dashboard.app.emit(
+                    "stats",
+                    Stats {
+                        ram_mb: sys.used_memory() / (1024 * 1024),
+                        cpu_pct: sys.global_cpu_usage(),
+                        disk_used_gb: disk_used as f64 / 1e9,
+                        disk_total_gb: disk_total as f64 / 1e9,
+                        uptime_secs: System::uptime(),
+                        scouts: dashboard.scouts.load(Ordering::Relaxed),
+                        monitored,
+                        slot: get_slot(),
+                    },
+                );
+            }
+        })
     }
 }
 
