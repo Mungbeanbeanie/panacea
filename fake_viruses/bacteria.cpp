@@ -13,7 +13,8 @@
 //
 // Behavior
 //   Once per second, fork a fixed, small number of child processes. Each child
-//   exits immediately; the parent reaps them all before the next tick.
+//   lingers briefly (kChildLinger) so detectors polling the process table can
+//   observe it; the parent reaps them all before the next tick.
 //
 // Usage
 //   ./bacteria [children_per_tick]
@@ -48,6 +49,12 @@ constexpr auto kTickInterval = std::chrono::seconds(1);
 constexpr int kDefaultChildrenPerTick = 5;
 constexpr int kMaxChildrenPerTick = 20;
 
+// How long each child lingers before exiting, so an observer polling the process
+// table (~500ms cadence) can actually see the children. Instant _exit(0) children
+// live sub-millisecond lives and are invisible to any realistic poll — same reason
+// virus.cpp holds its file descriptors open (kHoldOpenDuration).
+constexpr auto kChildLinger = std::chrono::milliseconds(700);
+
 // Handle SIGINT/SIGTERM by asking the main loop to stop.
 void RequestStop(int /*signal*/) { g_running = false; }
 
@@ -60,7 +67,8 @@ int ReplicateOnce(int count) {
   for (int i = 0; i < count; ++i) {
     pid_t pid = fork();
     if (pid == 0) {
-      // Child: do nothing and exit right away.
+      // Child: linger long enough to be observable, then exit.
+      std::this_thread::sleep_for(kChildLinger);
       _exit(0);
     }
     if (pid > 0) {

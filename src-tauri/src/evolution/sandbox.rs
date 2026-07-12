@@ -27,6 +27,22 @@ const EVALUATE_WAT: &str = r#"
 )
 "#;
 
+/// Alternate mock-host physics for a hardened target: a strain the standard primitives
+/// can't kill — only `Allele09` (bit 2) crashes it, and this particular mock host tolerates
+/// Allele09 in Stage 2. That's the "allergy Stage 2 can't see" setup: the fuzz winner is
+/// `[Allele09]`, which Stage 3's Lymph Node then correctly allergy-flags (LegacyBackupAgent)
+/// and drops. Same zero-import isolation guarantee as [`EVALUATE_WAT`].
+const HARDENED_EVALUATE_WAT: &str = r#"
+(module
+  (func $evaluate (param $bitmask i32) (result i32)
+    (if (i32.ne (i32.and (local.get $bitmask) (i32.const 4)) (i32.const 0))
+      (then (return (i32.const 1))))
+    (i32.const 0)
+  )
+  (export "evaluate" (func $evaluate))
+)
+"#;
+
 /// Snapshot of a frozen process's memory space, as a Soldier clones it into the sandbox
 /// after Stage 1 suspends the PID. Phase 4 mocks this input directly since the real
 /// snapshot comes from the Soldier lifecycle (Phase 3, not yet landed) — see
@@ -69,9 +85,19 @@ impl Sandbox {
     /// Sets up the sandbox: takes the cloned target into the MicroVM/Wasm container
     /// against a mock host OS.
     pub fn spawn(target: FrozenProcess) -> Self {
+        Self::with_physics(target, EVALUATE_WAT)
+    }
+
+    /// Sets up the sandbox around a hardened target — the [`HARDENED_EVALUATE_WAT`]
+    /// physics where only `Allele09` kills it (and the mock host tolerates it).
+    pub fn spawn_hardened(target: FrozenProcess) -> Self {
+        Self::with_physics(target, HARDENED_EVALUATE_WAT)
+    }
+
+    fn with_physics(target: FrozenProcess, wat: &str) -> Self {
         let engine = Engine::default();
-        let module = Module::new(&engine, EVALUATE_WAT)
-            .expect("EVALUATE_WAT is a fixed, hand-written constant validated at compile time");
+        let module = Module::new(&engine, wat)
+            .expect("physics WAT is a fixed, hand-written constant validated at compile time");
         Self {
             target,
             engine,
@@ -194,14 +220,34 @@ mod tests {
 
     #[test]
     fn compiled_gene_module_has_zero_imports() {
-        // Concrete, automatable proof of the isolation claim: the sandboxed module has no
-        // ambient host capability at all, regardless of what bytecode runs inside it.
+        // Concrete, automatable proof of the isolation claim: the sandboxed modules have no
+        // ambient host capability at all, regardless of what bytecode runs inside them.
         let engine = Engine::default();
-        let module = Module::new(&engine, EVALUATE_WAT).expect("EVALUATE_WAT is valid WAT");
+        for (name, wat) in [
+            ("EVALUATE_WAT", EVALUATE_WAT),
+            ("HARDENED_EVALUATE_WAT", HARDENED_EVALUATE_WAT),
+        ] {
+            let module = Module::new(&engine, wat).expect("physics WAT is valid");
+            assert_eq!(
+                module.imports().count(),
+                0,
+                "{name} must not import any host function"
+            );
+        }
+    }
+
+    #[test]
+    fn hardened_target_dies_only_to_allele09() {
+        let mut sandbox = Sandbox::spawn_hardened(mock_target());
         assert_eq!(
-            module.imports().count(),
-            0,
-            "the gene-evaluation module must not import any host function"
+            sandbox.run(&[Allele::Allele04, Allele::Allele12]),
+            TrialOutcome::TargetSurvived,
+            "the standard winning pair can't kill a hardened target"
+        );
+        assert_eq!(
+            sandbox.run(&[Allele::Allele09]),
+            TrialOutcome::TargetCrashed,
+            "the aggressive primitive kills it — and this mock host tolerates it"
         );
     }
 

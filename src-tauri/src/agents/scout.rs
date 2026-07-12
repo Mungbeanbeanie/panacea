@@ -137,7 +137,11 @@ impl<S: BehaviorSource + 'static> Scout<S> {
                 };
                 let id = threat_id(&schema);
                 suspend(pid);
-                let _ = self.wake_tx.send(WakeSignal { threat_id: id, pid });
+                let _ = self.wake_tx.send(WakeSignal {
+                    threat_id: id,
+                    pid,
+                    schema: schema.clone(),
+                });
                 let _ = self.threat_tx.send(ThreatReport {
                     threat_id: id,
                     schema,
@@ -207,6 +211,8 @@ pub enum SpecimenKind {
     Virus,
     /// `fake_viruses/disease` — periodic TCP beacon.
     Disease,
+    /// `fake_viruses/bacteria` — process replicator (bounded fork bursts).
+    Bacteria,
 }
 
 /// Minimum open file descriptors (via `lsof -p`, header line excluded) to count `virus`'s
@@ -221,10 +227,11 @@ const VIRUS_FD_THRESHOLD: usize = 9;
 /// shell-outs (no kernel-level tracer — eBPF/ETW/EndpointSecurity are each blocked for this
 /// project, not just costly: eBPF is Linux-only and needs root; ETW is Windows-only,
 /// already deprioritized; macOS's EndpointSecurity needs an Apple entitlement granted only
-/// to vetted security vendors). Covers `Action::HighEntropyFileLoop` (`virus`) and
-/// `Action::NetEnumWithVssTamper` (`disease`) only — `Action::HiddenChildFromTemp` has no
-/// real specimen yet (`bacteria` re-forks itself with no `exec()`, so there's no
-/// Temp-directory path to check; revisit when a real temp-dir-dropper specimen exists).
+/// to vetted security vendors). Covers `Action::HighEntropyFileLoop` (`virus`),
+/// `Action::NetEnumWithVssTamper` (`disease`), and `Action::HiddenChildFromTemp`
+/// (`bacteria` — its fork-churn is really observed via `pgrep -P`, but the children are
+/// plain forks, not exec'd from a Temp directory; the closest Stage-1 action stands in
+/// until a real temp-dir-dropper specimen exists).
 /// Each watched PID is independent: `Scout::tick()` sums `weight(action)` for every
 /// observation with no dedup by type, so a specimen doing its one suspicious thing
 /// continuously climbs toward the threshold on its own, no combining needed.
@@ -246,12 +253,14 @@ impl BehaviorSource for RealBehaviorSource {
                 let detected = match kind {
                     SpecimenKind::Virus => open_fd_count(pid) > VIRUS_FD_THRESHOLD,
                     SpecimenKind::Disease => has_outbound_connection(pid),
+                    SpecimenKind::Bacteria => has_live_child(pid),
                 };
                 detected.then_some(Observation {
                     pid,
                     action: match kind {
                         SpecimenKind::Virus => Action::HighEntropyFileLoop,
                         SpecimenKind::Disease => Action::NetEnumWithVssTamper,
+                        SpecimenKind::Bacteria => Action::HiddenChildFromTemp,
                     },
                 })
             })
@@ -298,6 +307,25 @@ fn has_outbound_connection(_pid: Pid) -> bool {
     false
 }
 
+/// Whether `pid` currently has any live child process, via `pgrep -P`. `bacteria`'s
+/// children linger ~700ms of each 1s tick (`kChildLinger` in `fake_viruses/bacteria.cpp`),
+/// so a 500ms-cadence poll catches a burst most ticks. `false` if `pgrep` fails or the
+/// process is gone — a dead PID just isn't suspicious.
+#[cfg(unix)]
+fn has_live_child(pid: Pid) -> bool {
+    std::process::Command::new("pgrep")
+        .args(["-P", &pid.to_string()])
+        .output()
+        .ok()
+        .map(|out| !out.stdout.is_empty())
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn has_live_child(_pid: Pid) -> bool {
+    false
+}
+
 /// Spawns a real `fake_viruses/` specimen binary, failing loudly (not silently) if it's
 /// missing — run `make` in `fake_viruses/` first (see
 /// ../../.claude/docs/build-run-test.md).
@@ -340,10 +368,12 @@ fn behavioral_schema_hash(schema: &BehavioralSchema) -> [u8; 32] {
 /// **real** Solana devnet program and a **real** behavioral detector (Phase 13, item 1 —
 /// closes the last major gap Phase 12 left: detection itself was still a hardcoded script).
 ///
-/// 1. Wave 1: `virus` and `disease` are spawned as real processes and watched concurrently
-///    by one Scout. Each is detected independently (no cure published yet for either), so
-///    the Soldier evolves one live (fuzz → allergy check → `commit_gene`) and dispenses it
-///    for each — two `Neutralized` outcomes, shown before any suppression.
+/// 1. Wave 1: `virus`, `disease`, and `bacteria` are spawned as real processes and watched
+///    concurrently by one Scout. Each is detected independently (no cure published yet for
+///    any), so the Soldier evolves one live (fuzz → allergy check → `commit_gene`) and
+///    dispenses it — `Neutralized` outcomes for `virus`/`disease`, while `bacteria`'s
+///    hardened clone yields an Allele09 candidate the Lymph Node allergy-flags and drops
+///    (`NoCureAvailable`): the live allergy example.
 /// 2. Once both resolve, `suppress_gene` flips the kill-switch on `disease`'s cure
 ///    specifically (its schema is deterministic — see [`disease_threat_id`]), and wave 2 (a
 ///    fresh `disease` process, same real behavior, same `Threat_ID`) shows the halt.
@@ -463,7 +493,7 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
     // just a slower catch).
     const WAVE1_COPIES: usize = 3;
     let fake_viruses_dir = format!("{manifest_dir}/../fake_viruses");
-    let mut targets = Vec::with_capacity(WAVE1_COPIES * 2);
+    let mut targets = Vec::with_capacity(WAVE1_COPIES * 2 + 1);
     for _ in 0..WAVE1_COPIES {
         let virus_child = spawn_specimen("virus", &[fake_viruses_dir.as_str()]);
         targets.push((virus_child.id(), SpecimenKind::Virus));
@@ -472,11 +502,18 @@ pub fn spawn_demo(app: AppHandle) -> JoinHandle<()> {
         targets.push((disease_child.id(), SpecimenKind::Disease));
         drop(disease_child);
     }
+    // One `bacteria` alongside the copies: the allergy example. Its hardened clone only
+    // dies to Allele09, which the Lymph Node allergy-flags (LegacyBackupAgent) — so its
+    // outcome is NoCureAvailable and a live `gene.allergy_flagged` event, not a cure.
+    // One copy is enough: repeats share the same deterministic Threat_ID.
+    let bacteria_child = spawn_specimen("bacteria", &[]);
+    targets.push((bacteria_child.id(), SpecimenKind::Bacteria));
+    drop(bacteria_child);
     let source = RealBehaviorSource::new(targets);
     Scout::new(source, wake_tx.clone(), threat_tx.clone(), Some(dashboard.clone())).spawn();
 
     // One outcome per specimen this wave.
-    for _ in 0..(WAVE1_COPIES * 2) {
+    for _ in 0..(WAVE1_COPIES * 2 + 1) {
         match outcome_rx.recv() {
             Ok(outcome) => println!("[demo] wave 1 outcome: {outcome:?}"),
             Err(_) => {

@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use serde::{Deserialize, Serialize};
 
 use super::WakeSignal;
-use crate::core::Pid;
+use crate::core::{Action, Pid};
 use crate::dashboard::Dashboard;
 
 /// Lowest PID the Soldier will release/terminate — a coarse guard against touching
@@ -143,7 +143,7 @@ pub fn handle_wake(
 ) -> std::io::Result<(Spore, PharmacyOutcome)> {
     let spore = Spore::load_or_dormant(spore_path);
     let soldier = Soldier::wake(spore, signal);
-    let outcome = soldier.dispense(&signal.threat_id, pharmacy, dashboard);
+    let outcome = soldier.dispense(signal, pharmacy, dashboard);
     release_target(soldier.pid); // demo cleanup: unfreeze/terminate the scripted helper
     if let Some(dashboard) = dashboard {
         dashboard.clear_ecosystem_node(soldier.pid);
@@ -198,6 +198,7 @@ mod tests {
         let signal = WakeSignal {
             threat_id: ThreatId([7u8; 32]),
             pid: std::process::id(),
+            schema: crate::core::BehavioralSchema { actions: vec![] },
         };
 
         let pharmacy = Pharmacy::empty();
@@ -239,6 +240,7 @@ mod tests {
         let signal = WakeSignal {
             threat_id: ThreatId([1u8; 32]),
             pid,
+            schema: crate::core::BehavioralSchema { actions: vec![] },
         };
 
         let pharmacy = Pharmacy::empty();
@@ -433,12 +435,14 @@ impl Pharmacy {
 }
 
 impl Soldier {
-    /// Dispense the cure for `threat_id` through the full pharmacy flow: resolve →
+    /// Dispense the cure for `signal.threat_id` through the full pharmacy flow: resolve →
     /// **kill-switch check** → decode-and-verify → run in-sandbox (evolving one first if
-    /// none is published yet).
+    /// none is published yet). The observed schema picks the mock target physics: a
+    /// replicator-style strain (`HiddenChildFromTemp`) resists the standard alleles, so
+    /// its clone goes into the hardened sandbox.
     fn dispense(
         &self,
-        threat_id: &ThreatId,
+        signal: &WakeSignal,
         pharmacy: &Pharmacy,
         dashboard: Option<&Dashboard>,
     ) -> PharmacyOutcome {
@@ -446,11 +450,16 @@ impl Soldier {
             "[soldier] dispensing for pid {} (cloned rss {} KiB)",
             self.clone.pid, self.clone.rss_kib
         );
-        let sandbox = Sandbox::spawn(FrozenProcess {
+        let target = FrozenProcess {
             pid: self.clone.pid,
             memory: Vec::new(),
-        });
-        resolve_and_run(threat_id, pharmacy, sandbox, dashboard)
+        };
+        let sandbox = if signal.schema.actions.contains(&Action::HiddenChildFromTemp) {
+            Sandbox::spawn_hardened(target)
+        } else {
+            Sandbox::spawn(target)
+        };
+        resolve_and_run(&signal.threat_id, pharmacy, sandbox, dashboard)
     }
 }
 
@@ -548,6 +557,28 @@ mod pharmacy_flow_tests {
     }
 
     #[test]
+    fn hardened_target_evolution_is_allergy_flagged_and_dropped() {
+        // The allergy path end to end, offline: no published cure, fuzz on the hardened
+        // sandbox yields [Allele09], the Lymph Node flags it (LegacyBackupAgent), and
+        // nothing ever reaches the Genome Registry.
+        let threat_id = sample_threat_id();
+        let ledger = SharedFakeLedger::new();
+        let pharmacy = pharmacy_over(ledger.clone());
+        let sandbox = Sandbox::spawn_hardened(FrozenProcess {
+            pid: 4242,
+            memory: vec![],
+        });
+
+        let outcome = resolve_and_run(&threat_id, &pharmacy, sandbox, None);
+
+        assert_eq!(outcome, PharmacyOutcome::NoCureAvailable);
+        assert!(
+            ledger.get(&threat_id).unwrap().is_none(),
+            "an allergy-flagged gene must never be committed"
+        );
+    }
+
+    #[test]
     fn commit_failure_surfaces_as_ledger_unavailable() {
         let threat_id = sample_threat_id();
         let pharmacy = Pharmacy {
@@ -584,31 +615,31 @@ mod live_dispense_tests {
         }
     }
 
-    fn woken_soldier(threat_id: ThreatId) -> Soldier {
+    fn wake_signal(threat_id: ThreatId) -> WakeSignal {
         // Own PID so the release path is guarded off; dispense doesn't release anyway.
-        Soldier::wake(
-            Spore::dormant(),
-            &WakeSignal {
-                threat_id,
-                pid: std::process::id(),
-            },
-        )
+        WakeSignal {
+            threat_id,
+            pid: std::process::id(),
+            schema: crate::core::BehavioralSchema { actions: vec![] },
+        }
     }
 
     #[test]
     fn active_cure_is_dispensed_in_sandbox() {
-        let threat_id = ThreatId([3u8; 32]);
-        let pharmacy = seeded_pharmacy(threat_id, false);
-        let outcome = woken_soldier(threat_id).dispense(&threat_id, &pharmacy, None);
+        let signal = wake_signal(ThreatId([3u8; 32]));
+        let pharmacy = seeded_pharmacy(signal.threat_id, false);
+        let soldier = Soldier::wake(Spore::dormant(), &signal);
+        let outcome = soldier.dispense(&signal, &pharmacy, None);
         assert_eq!(outcome, PharmacyOutcome::Neutralized);
     }
 
     #[test]
     fn suppressed_gene_halts_the_live_cure_before_run() {
-        let threat_id = ThreatId([3u8; 32]);
-        let pharmacy = seeded_pharmacy(threat_id, true);
+        let signal = wake_signal(ThreatId([3u8; 32]));
+        let pharmacy = seeded_pharmacy(signal.threat_id, true);
 
-        let outcome = woken_soldier(threat_id).dispense(&threat_id, &pharmacy, None);
+        let soldier = Soldier::wake(Spore::dormant(), &signal);
+        let outcome = soldier.dispense(&signal, &pharmacy, None);
         assert_eq!(outcome, PharmacyOutcome::Suppressed);
     }
 }

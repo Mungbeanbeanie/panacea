@@ -17,6 +17,9 @@ pub struct WakeSignal {
     pub threat_id: ThreatId,
     /// The suspended process the threat is running as.
     pub pid: Pid,
+    /// The flagged behavioral vector itself — the Soldier uses it to pick the mock target
+    /// physics for the sandbox (a replicator-style strain resists the standard alleles).
+    pub schema: BehavioralSchema,
 }
 
 /// Scout → Threat Registry (Ledger 2) submission for a newly flagged trajectory.

@@ -152,6 +152,18 @@ mod tests {
     }
 
     #[test]
+    fn fuzz_on_hardened_target_finds_the_allergic_allele() {
+        // The hardened strain only dies to Allele09 — the candidate Stage 3 must then
+        // allergy-flag (LegacyBackupAgent), so this is the allergy demo's Stage-2 half.
+        let mut sandbox = Sandbox::spawn_hardened(FrozenProcess {
+            pid: 1,
+            memory: vec![],
+        });
+        let gene = fuzz(&mut sandbox).expect("fuzz driver should find the aggressive combo");
+        assert_eq!(gene.sequence, vec![Allele::Allele09]);
+    }
+
+    #[test]
     fn compiled_gene_bytes_round_trip() {
         let gene = GenePayload {
             sequence: vec![Allele::Allele04, Allele::Allele12],
