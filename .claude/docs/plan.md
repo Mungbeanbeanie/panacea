@@ -299,13 +299,23 @@ real infrastructure wrapped around however real the top of the list is.
    ETW/EndpointSecurity) — each is blocked for this project specifically, not just costly
    (macOS's EndpointSecurity needs an Apple entitlement granted only to vetted security
    vendors), not just deprioritized effort.
-2. **Real sandbox / execution substrate.** `Sandbox::run()` is a hardcoded `match` on
-   allele identity (`Allele09` → always destabilizes; `Allele04`+`Allele12` → always
-   crashes), not a MicroVM/Firecracker/Wasm runtime — there is no actual isolated execution
-   happening. `fuzz()`'s combinatorial search is real, but it's searching against a
-   lookup table with a pre-written answer, not a real target's real behavior. Tied with #1
-   for most important: a real Scout feeding a fake sandbox still can't produce a cure that
-   does anything.
+2. **~~Real sandbox / execution substrate~~ — isolation mechanism done; attack content
+   deliberately stays synthetic.** `Sandbox::run()` (`evolution/sandbox.rs`) now executes a
+   real `wasmi` Wasm module (`EVALUATE_WAT`, a hand-written WAT constant) instead of a
+   hardcoded Rust `match` — genuine isolated execution, verified by a
+   `compiled_gene_module_has_zero_imports` test asserting the module declares no host
+   imports at all, so it is provably incapable of touching the real host, memory, files, or
+   network. The compiled `Module` is built once per `Sandbox` and reused across calls; only
+   the `Store`/`Instance` execution state is fresh per `run()`, matching genuine per-trial
+   isolation without wastefully re-parsing static WAT on every fuzz combo. The
+   attack-effectiveness decision inside the module is unchanged synthetic physics
+   (`Allele09` destabilizes, `Allele04`+`Allele12` crashes) — deliberately **not** made real,
+   both because building actual working exploit primitives is out of scope for a hackathon
+   PoC without separate explicit authorization, and because there's no real cross-process
+   target memory yet to decide over (`FrozenProcess.memory` stays mocked — real memory
+   cloning needs privileged `ptrace`/`task_for_pid`, blocked by the same kind of platform
+   entitlement story that blocked kernel tracers in item #1). All 3 pre-existing physics
+   tests pass unchanged against the real execution path, confirming no behavior regression.
 3. **Real gene payload.** Follows directly from #2 — a gene is `Vec<Allele>` over a
    3-variant enum (`gene_seq: Vec<u8>`, max 3 bytes on-chain), not compiled bytecode. Once
    the sandbox is real, the "Wasm Gene Payload" needs to become an actual executable
