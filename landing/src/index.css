@@ -1,0 +1,85 @@
+/* Global base styles shared by every screen — fonts, resets, and the small set of
+   hover/focus states that are cheaper as real CSS than as inline-style JS. */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #1c1c1f;
+}
+body {
+  font-family: "IBM Plex Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #f2f1f4;
+}
+a {
+  color: #c5b3e6;
+  text-decoration: none;
+}
+a:hover {
+  color: #ddd0f2;
+}
+input::placeholder {
+  color: #6f6c78;
+}
+::selection {
+  background: rgba(197, 179, 230, 0.35);
+}
+
+@keyframes pan-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pan-page {
+  animation: 320ms ease-out both pan-page-enter;
+}
+
+.pan-nav-link {
+  color: #c9c6d0;
+}
+.pan-nav-link:hover {
+  color: #ffffff;
+}
+
+.pan-btn-fill {
+  background: #78be43;
+  color: #17240d;
+}
+.pan-btn-fill:hover {
+  background: #8ecf5b;
+}
+
+.pan-btn-outline {
+  border: 1px solid #3b3a40;
+  color: #f2f1f4;
+}
+.pan-btn-outline:hover {
+  border-color: #c5b3e6;
+  color: #ffffff;
+}
+
+.pan-btn-outline-danger {
+  border: 1px solid rgba(224, 90, 90, 0.35);
+  color: #e08a8a;
+}
+.pan-btn-outline-danger:hover {
+  border-color: #e08a8a;
+}
+
+.pan-card-hover {
+  transition: border-color 0.2s;
+}
+.pan-card-hover:hover {
+  border-color: var(--hover-color, #78be43);
+}
+
+.pan-input {
+  transition: border-color 0.2s;
+}
+.pan-input:focus {
+  border-color: #c5b3e6;
+}
