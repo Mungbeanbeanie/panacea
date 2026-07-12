@@ -270,6 +270,53 @@ sandbox host stay fake): the scripted target as the "virus," the mock host insid
 no IPFS) → `Neutralized`, then a `suppress_gene` transaction halting the next wake — no manual
 seeding.
 
+## Phase 14 — Frontend ↔ Backend Live Link
+**Owner:** C (+B for the Rust side) · **Depends on:** 12 · start anytime
+
+Phase 12 landed the backend half (`dashboard.rs` emits real `ecosystem`/`ledger`/`strains`
+events), but inside the running app the UI still shows mocks. Root causes found by audit
+(2026-07-11): `useTauriEvents.js` detects Tauri via `"__TAURI__" in window`, which is only
+injected under the unset `withGlobalTauri` config flag — so the hook always falls back to
+its mock generators, even in-app; emits are edge-triggered and the demo is finite, so a
+user who logs in and navigates after the two waves sees "Waiting for…" forever; and the
+`strains` stream has no mounted consumer. Goal: `make dev` → signed-in Dashboard shows real
+backend data, no mocks on the live path.
+
+- [ ] **Fix Tauri detection** (`landing/src/hooks/useTauriEvents.js`): check
+      `"__TAURI_INTERNALS__" in window` (always injected by Tauri 2) instead of
+      `"__TAURI__"`. Keep the mock fallback for plain browser `vite dev`.
+- [ ] **Snapshot re-emit loop** (`dashboard.rs` + `scout.rs`): `spawn_reemit(self: &Arc<Self>)`
+      re-emits current `ecosystem`/`ledger`/`strains` state every ~2s; called from
+      `spawn_demo`. Fixes late subscribers and the post-demo dead air / false `dropped`.
+- [ ] **Real system stats — new `stats` stream**: add `sysinfo`; the re-emit thread also
+      emits `{ ramMb, cpuPct, diskUsedGb, diskTotalGb, uptimeSecs, scouts, monitored, slot }`.
+      `scouts` = AtomicUsize on `Dashboard` bumped by `Scout::spawn`; `slot` = real devnet
+      slot via an `RpcClient::get_slot` closure passed from `spawn_demo` (None on failure).
+      `Dashboard.jsx` uses real values when present, keeps the random-walk as no-data
+      fallback. Delete the GPU card (no cross-platform source — deletion over a fake number).
+- [ ] **Mount the `strains` stream**: add the existing `StrainTree.jsx` as a card in
+      `pages/Dashboard.jsx` next to "Immune ledger". No double-mount of
+      EcosystemGraph/LedgerTerminal — Dashboard already renders those streams its own way.
+- [ ] **Real Protection page** (`pages/Protection.jsx`): derive the kill log from
+      `threat.neutralized`, allergies from `gene.allergy_flagged`, suppressions from
+      `gene.suppressed` via `useTauriEvents("ledger")`; summary tiles computed from the
+      events; columns shrink to what's real (Threat ID, time, outcome — no invented scout
+      names/TTK). Delete the static `KILLS` placeholders; empty state per degrade-gracefully.
+- [ ] **Event copy for real kinds** (`pages/Dashboard.jsx`): extend `LEDGER_EVENT_COPY` /
+      `LEDGER_BLOCK_STATUS` with `threat.mobilized`, `gene.fuzzed`, `gene.allergy_flagged`,
+      `gene.suppressed`, `threat.neutralized`, `gene.ineffective`, `cure.unavailable`,
+      `ledger.unavailable`; drop the mock-era `gene.proposed`/`poi.verified` entries. Fix the
+      "Gene vector" line — IPFS was removed in Phase 12; show the threat hash instead.
+
+Stays simulated, declared with `ponytail:` comments: active nodes, cures/min, soldier spore
+counts, battery — network-wide fiction a single endpoint can't know.
+
+**Done when:** `make dev` → log in → Dashboard shows the real `virus`/`disease` PIDs climbing
+to `suspended`, the real ledger event sequence through `threat.neutralized` then
+`gene.suppressed`, a growing StrainTree, and real RAM/CPU/scouts/slot numbers; navigating
+away and back after the demo still renders (re-emit); Protection lists the real kills; plain
+browser `vite dev` still falls back to mocks.
+
 ## Phase 13 — Beyond the Demo (path to a real implementation)
 
 **Owner:** unassigned · **Depends on:** 0–12 · not required for the PoC bar (`CLAUDE.md`:
